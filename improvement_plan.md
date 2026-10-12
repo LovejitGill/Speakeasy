@@ -46,6 +46,17 @@
 - Short answers produced generic invitations and eventually repeated closing text.
   Topic changes and question clarification also need more useful supported replies.
 
+## Interface refresh
+
+- Added a dark theme, green action accent, grouped sidebar controls, onboarding
+  panel, session overview, and a distinct recording/message composer.
+- CSS is local; authored presentation markup stays separate from learner/model
+  text. Existing recording review, save recovery, and grammar controls remain.
+- All 155 tests and lint/format checks passed after the UI changes.
+- Rendered the welcome and conversation screens in isolated headless Chrome at
+  desktop and 390px mobile widths. Reviewed screenshots and confirmed no page
+  horizontal overflow; production sessions were untouched.
+
 ## Remaining work
 
 - Improve short-answer continuity and question clarification without guessing facts.
@@ -59,3 +70,20 @@
 Next improvement: short-answer continuity and targeted question clarification,
 with regression tests for relevance and avoiding repeated closing replies. Suitable for a feature checkpoint
 once reviewed; broader quality or production-readiness claims are not established.
+
+### Direct recording flow
+- Visible recorder automatically transcribes into the single editable message box.
+  Send remains explicit; Record again preserves the draft until transcription succeeds.
+- Failed transcription preserves text and offers an explicit retry; reruns do not
+  reprocess the recording or overwrite edits. Fresh manual microphone verification
+  of this updated flow remains pending.
+- Validation: all 156 tests, Ruff lint/format, and diff whitespace checks passed.
+
+### Transcript handoff fix
+- Preserve a completed transcript before spinner cleanup can yield to a rerun,
+  then apply it to the editable message box on the next render.
+- An interruption regression test reproduced the empty-box failure before the fix.
+  All 157 tests and lint/format checks pass.
+- Isolated Chrome recorder with an injected speech sample and real local Whisper
+  populated the textbox, retained the transcript across history refresh ticks, and
+  did not submit a turn. Physical microphone retest remains pending.

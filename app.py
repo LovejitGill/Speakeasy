@@ -1,6 +1,7 @@
 """Streamlit presentation only; jobs and inference do not depend on rendering."""
 
 import atexit
+import hashlib
 import os
 from pathlib import Path
 
@@ -12,6 +13,8 @@ import storage
 import tutor
 from errors import user_message
 from worker import Worker
+
+STYLE_PATH = Path(__file__).parent / "assets" / "style.css"
 
 DB_PATH = Path(os.environ.get("SPEAKWELL_DB_PATH", str(storage.DEFAULT_PATH))).resolve()
 
@@ -42,8 +45,10 @@ def feedback(result, label):
 
 def render_turn(turn):
     with st.chat_message("user"):
+        st.caption("YOU")
         st.text(turn["learner_text"])
     with st.chat_message("assistant"):
+        st.caption("SPEAKWELL")
         st.text(turn["tutor_reply"])
         if turn["path"] == "local_fallback":
             st.caption(
@@ -68,54 +73,77 @@ def render_history(session_id):
     try:
         worker(str(DB_PATH)).start()
         turns = storage.history(session_id, DB_PATH)
-        st.caption(f"{len(turns)} completed turns")
+        title, count = st.columns([3, 2], vertical_alignment="center")
+        with title:
+            st.subheader("Your conversation")
+        with count:
+            st.caption(f"{len(turns)} completed turns")
+        if not turns:
+            st.info(
+                "Your conversation starts with your first message. Try the prompt above, or tell me what's on your mind."
+            )
         for turn in turns:
             render_turn(turn)
     except Exception as exc:  # noqa: BLE001 -- safe UI/service boundary
         st.error(user_message(exc))
 
 
+def reset_recording():
+    st.session_state.audio_epoch = st.session_state.get("audio_epoch", 0) + 1
+    st.session_state.pop("processed_audio", None)
+    st.session_state.pop("recording_error", None)
+
+
 def recording():
-    with st.expander("Record a message"):
-        st.caption(
-            "Record 0.3–60 seconds. Audio stays in memory. Transcripts are never sent automatically."
-        )
-        audio = st.audio_input(
-            "Recording",
-            sample_rate=16000,
-            key=f"audio_{st.session_state.get('audio_epoch', 0)}",
-        )
-        if st.button("Transcribe recording", disabled=audio is None):
-            try:
-                with st.spinner("Transcribing locally…"):
-                    transcript = speech.transcribe(audio.getvalue())
-                st.session_state.transcript = transcript
-            except Exception as exc:  # noqa: BLE001 -- safe UI/service boundary
-                st.error(user_message(exc))
-        if "transcript" in st.session_state:
-            st.text_area("Review and edit transcript", key="transcript", height=100)
-            st.caption(
-                "Using this transcript replaces the draft below. Sending is a separate action."
-            )
-            if st.button("Use reviewed transcript as draft"):
-                st.session_state.draft = st.session_state.transcript
-            if st.button("Discard recording and transcript"):
-                st.session_state.pop("transcript", None)
-                st.session_state.audio_epoch = (
-                    st.session_state.get("audio_epoch", 0) + 1
-                )
-                st.rerun()
+    st.caption(
+        "Record a message · 0.3–60 seconds. Stop recording to transcribe automatically."
+    )
+    audio = st.audio_input(
+        "Record a message",
+        sample_rate=16000,
+        key=f"audio_{st.session_state.get('audio_epoch', 0)}",
+    )
+    if audio is None:
+        return
+    if st.button("Record again", icon=":material/mic:"):
+        reset_recording()
+        st.rerun()
+    data = audio.getvalue()
+    fingerprint = hashlib.sha256(data).hexdigest()
+    retry = False
+    if st.session_state.get("recording_error"):
+        st.error(st.session_state.recording_error)
+        retry = st.button("Retry transcription")
+    if fingerprint != st.session_state.get("processed_audio") or retry:
+        st.session_state.pop("recording_error", None)
+        try:
+            with st.spinner("Transcribing locally…"):
+                # Keep the result outside widget state before spinner cleanup can
+                # yield to a queued rerun. Apply it when the textbox renders next.
+                st.session_state.pending_transcript = speech.transcribe(data)
+                st.session_state.processed_audio = fingerprint
+        except Exception as exc:  # noqa: BLE001 -- safe UI/service boundary
+            st.session_state.recording_error = user_message(exc)
+            st.session_state.processed_audio = fingerprint
+        # A fresh render requires a separate, deliberate Send after transcription.
+        st.rerun()
 
 
 def main():
-    st.set_page_config(page_title="Speakwell", page_icon="💬")
-    st.title("Speakwell")
-    st.caption("Local English practice · typed messages or reviewed recordings")
+    st.set_page_config(
+        page_title="Speakwell · English practice", page_icon="💬", layout="wide"
+    )
+    # Only trusted local styles and authored markup go through st.html.
+    st.html("<style>" + STYLE_PATH.read_text() + "</style>")
+    st.html('<p class="sw-eyebrow">Your English practice space</p>')
+    st.title("A little practice. More confidence.")
+    st.caption("Make room for a conversation, at your own pace.")
     st.session_state.setdefault("draft", "")
+    if "pending_transcript" in st.session_state:
+        st.session_state.draft = st.session_state.pop("pending_transcript")
     if st.session_state.pop("clear_draft", False):
         st.session_state.draft = ""
-        st.session_state.pop("transcript", None)
-        st.session_state.audio_epoch = st.session_state.get("audio_epoch", 0) + 1
+        reset_recording()
     try:
         storage.initialize(DB_PATH)
         available = storage.sessions(DB_PATH)
@@ -137,13 +165,26 @@ def main():
             "That session could not be found. Choose a saved session or start a new one."
         )
     protected = bool(
-        unsaved or st.session_state.draft or st.session_state.get("transcript")
+        unsaved or st.session_state.draft or st.session_state.get("processed_audio")
     )
     with st.sidebar:
-        st.header("Practice")
-        level = st.selectbox("Level", conversation.LEVELS)
-        scenario = st.selectbox("Scenario", conversation.SCENARIOS)
-        if st.button("Start new session", disabled=protected):
+        st.html(
+            '<div class="sw-brand"><span class="sw-mark" aria-hidden="true">s</span><span class="sw-wordmark">speakwell</span></div>'
+        )
+        st.caption("ENGLISH · LOCAL PRACTICE")
+        st.divider()
+        st.subheader("Set up your practice")
+        level = st.selectbox("Level", conversation.LEVELS, format_func=str.capitalize)
+        scenario = st.selectbox(
+            "Scenario", conversation.SCENARIOS, format_func=str.capitalize
+        )
+        if st.button(
+            "Start new session",
+            disabled=protected,
+            type="primary",
+            width="stretch",
+            icon=":material/add:",
+        ):
             try:
                 st.query_params.session = storage.create_session(
                     level, scenario, DB_PATH
@@ -151,6 +192,11 @@ def main():
                 st.rerun()
             except Exception as exc:  # noqa: BLE001 -- safe UI/service boundary
                 st.error(user_message(exc))
+        st.caption("Level and scenario apply to new sessions.")
+        if protected:
+            st.caption("Save or clear your draft before switching sessions.")
+        st.divider()
+        st.subheader("Your sessions")
         if available:
             selected = st.selectbox(
                 "Saved sessions",
@@ -159,21 +205,44 @@ def main():
                     f"{row['created']} · {row['scenario']} · {row['id'][:6]}"
                 ),
             )
-            if st.button("Open session", disabled=protected):
+            if st.button(
+                "Open session",
+                disabled=protected,
+                width="stretch",
+                icon=":material/history:",
+            ):
                 st.query_params.session = selected["id"]
                 st.rerun()
-        st.caption(
-            "Settings apply to new sessions. Save or clear drafts before switching sessions."
-        )
+        else:
+            st.caption("Saved conversations will appear here.")
+        st.divider()
+        st.subheader("Feedback")
         full = st.checkbox("Full grammar check after sending", value=True)
-        st.caption(
-            "Sent text is stored locally. Keep session URLs private. This app has no accounts."
-        )
+        st.caption("A closer look at your grammar, after your reply is ready.")
+        with st.expander("About your practice", icon=":material/info:"):
+            st.caption(
+                "Sent text stays on this computer. Recordings are not saved. Keep session URLs private; this app has no accounts."
+            )
+            st.caption(
+                "Feedback can be wrong. No suggested correction does not mean error-free English."
+            )
     if not session:
-        st.info("Start a session or open a saved one to practise.")
+        with st.container(key="welcome"):
+            st.html('<span class="sw-tag">One conversation at a time</span>')
+            st.header("What would you like to talk about?")
+            st.write(
+                "Choose a level and an everyday scenario in the sidebar, then start your session. Or return to a saved conversation."
+            )
+            st.html("""<div class="sw-features">
+                <div class="sw-feature"><strong>01 · Make it yours</strong><p>Introductions, daily activities, or ordering a meal. Choose a situation you want to practise.</p></div>
+                <div class="sw-feature"><strong>02 · Type or record</strong><p>Write a message or record your voice. Review and edit your transcript before sending.</p></div>
+                <div class="sw-feature"><strong>03 · Reflect and return</strong><p>Explore grammar suggestions and pick up a saved conversation whenever you're ready.</p></div>
+                </div>""")
         return
-    st.caption(f"{session['level'].capitalize()} · {session['scenario']}")
-    st.text(conversation.OPENERS[session["scenario"]])
+    with st.container(key="session_overview"):
+        st.caption(f"{session['level'].capitalize()} · {session['scenario']}")
+        st.subheader(session["scenario"].capitalize())
+        st.text(conversation.OPENERS[session["scenario"]])
     render_history(session["id"])
     if unsaved:
         st.warning(
@@ -192,25 +261,44 @@ def main():
             except Exception as exc:  # noqa: BLE001 -- safe UI/service boundary
                 st.error(user_message(exc))
         return
-    recording()
-    st.text_area("Your message", key="draft", height=120)
-    st.caption(f"{len(st.session_state.draft)}/1,000 characters")
-    if st.button("Send", type="primary", disabled=not st.session_state.draft.strip()):
-        try:
-            with st.spinner("Preparing a reply…"):
-                turn, saved = tutor.submit(
-                    st.session_state.draft, session, full_grammar=full, path=DB_PATH
-                )
-            if saved:
+    with st.container(key="composer"):
+        st.subheader("Your next thought")
+        st.caption(
+            "Type or record a message. Review or edit the text below, then choose Send to confirm."
+        )
+        recording()
+        st.text_area(
+            "Your message",
+            key="draft",
+            height=140,
+            placeholder="Start with a thought, a story, or a question…",
+        )
+        st.caption(f"{len(st.session_state.draft)}/1,000 characters")
+        with st.container(horizontal=True, vertical_alignment="center"):
+            if st.button(
+                "Send",
+                type="primary",
+                icon=":material/arrow_upward:",
+                disabled=not st.session_state.draft.strip(),
+            ):
+                try:
+                    with st.spinner("Preparing a reply…"):
+                        turn, saved = tutor.submit(
+                            st.session_state.draft,
+                            session,
+                            full_grammar=full,
+                            path=DB_PATH,
+                        )
+                    if saved:
+                        st.session_state.clear_draft = True
+                    else:
+                        st.session_state.unsaved = turn
+                    st.rerun()
+                except Exception as exc:  # noqa: BLE001 -- safe UI/service boundary
+                    st.error(user_message(exc))
+            if st.button("Clear draft", type="tertiary"):
                 st.session_state.clear_draft = True
-            else:
-                st.session_state.unsaved = turn
-            st.rerun()
-        except Exception as exc:  # noqa: BLE001 -- safe UI/service boundary
-            st.error(user_message(exc))
-    if st.button("Clear draft"):
-        st.session_state.clear_draft = True
-        st.rerun()
+                st.rerun()
 
 
 if __name__ == "__main__":

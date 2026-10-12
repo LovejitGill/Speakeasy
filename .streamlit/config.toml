@@ -5,3 +5,11 @@ maxMessageSize = 4
 
 [browser]
 gatherUsageStats = false
+
+[theme]
+base = "dark"
+primaryColor = "#C0E890"
+backgroundColor = "#10191D"
+secondaryBackgroundColor = "#18252B"
+textColor = "#F1F5F3"
+font = "sans serif"
