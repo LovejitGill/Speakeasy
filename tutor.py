@@ -9,7 +9,15 @@ import storage
 from errors import StorageError
 
 
-def submit(text, session, *, full_grammar=True, path=storage.DEFAULT_PATH):
+def submit(
+    text,
+    session,
+    *,
+    full_grammar=True,
+    spelling=True,
+    names=(),
+    path=storage.DEFAULT_PATH,
+):
     text = conversation.validate_text(text)
     rows = storage.history(session["id"], path)
 
@@ -24,7 +32,14 @@ def submit(text, session, *, full_grammar=True, path=storage.DEFAULT_PATH):
                     scenario=session["scenario"],
                 )
             )
-            quick = tasks.create_task(grammar.quick_check(text))
+            quick = tasks.create_task(
+                grammar.quick_check(
+                    text,
+                    history=conversation.bounded_history(rows),
+                    spelling=spelling,
+                    names=names,
+                )
+            )
         return reply.result(), quick.result()
 
     reply, quick = asyncio.run(respond())

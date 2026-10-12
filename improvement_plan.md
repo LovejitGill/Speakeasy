@@ -151,3 +151,39 @@ production-readiness claims are not established.
 - Pointers now sit under the learner message. The latest tutor reply and recording
   controls share one composer section. New focused layout regression passed;
   grammar feedback still refreshes independently of the editable draft.
+
+### Unavailable feedback diagnosis and article coverage
+- Live LanguageTool and both model identities verified. Quick checks succeeded
+  in this diagnostic; a current quick timeout was not reproduced.
+- Reproduced unavailable full count feedback from a missing default checker
+  installation. Copied the existing LanguageTool dependency into ignored .tools
+  and linked the existing Java runtime; source/reference files were unchanged.
+  The live plural example now offers “I bought three apples.”
+- Full errors identify proposal/checker/count stage without exposing learner text
+  or raw errors. Quick errors point to checker availability/verification or budget.
+- Added a/an quick feedback using exact LanguageTool evidence, standalone article
+  boundaries, and existing ambiguity restrictions. Two live article examples pass.
+- Ten new tests passed; no full-suite run. Python lint/format, shell syntax, and
+  whitespace checks passed. Previous saved failure results are not rewritten.
+
+- Follow-up: the running app retained the old cached grammar worker. Restarted
+  port 8502 with the existing Java 21 runtime. Rechecking the user's failed input
+  without saving a turn completed in 2.79 s with withheld feedback, not unavailable.
+  Documented that backend edits require a process restart, not just browser refresh.
+
+### Optional spelling suggestions
+- Reuse the existing local quick-check response; no extra service call or model.
+  Show up to three single-word alternatives for up to five flagged words, never
+  rewriting the learner message or conversation history.
+- Skip simple introduced names in current/bounded recent learner text. Capitalized
+  unknowns receive optional alternatives; multiword splits are withheld.
+  Learners can confirm names in a browser-session dictionary, without changing saved text.
+  Name detection is conservative, not comprehensive named-entity recognition.
+- Typed messages and edited transcripts receive suggestions; untouched transcripts
+  do not. Feedback displays safely as plain text and persists in existing JSON.
+- Ten new tests passed, including names, Unicode evidence, malicious alternatives,
+  unchanged saved input, and recording/edit provenance. Three live LanguageTool
+  examples passed. Full suite not run; changed Python lint/format checks passed.
+
+- Capitalized suggestions and runtime name confirmation: three focused tests passed;
+  changed Python lint and diff checks passed. No additional service requests.

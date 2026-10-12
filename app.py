@@ -26,7 +26,7 @@ def worker(path):
     return instance
 
 
-def feedback(result, label):
+def feedback(result, label, turn_id):
     if not result:
         return
     offered = result["state"] == "offered"
@@ -37,7 +37,17 @@ def feedback(result, label):
             "Unavailable" if result["state"] == "unavailable" else "No supported edit"
         )
     )
-    with st.expander(f"{label} · {status}", expanded=offered):
+    if label == "Quick feedback" and result["state"] == "withheld":
+        status = "Nice effort! No supported corrections found."
+    names = st.session_state.get("spelling_names", set())
+    spellings = [
+        item
+        for item in result.get("spelling", [])
+        if item["word"].casefold() not in names
+    ]
+    if spellings:
+        status = "Suggested edit and spelling" if offered else "Spelling to review"
+    with st.expander(f"{label} · {status}", expanded=offered or bool(spellings)):
         if offered:
             st.caption("SUGGESTED SENTENCE")
             st.text(result["corrected_text"])
@@ -51,6 +61,25 @@ def feedback(result, label):
                     "No supported correction found; this is not proof of correct grammar.",
                 )
             )
+        for item in spellings:
+            st.text(f"Check this word: {item['word']}")
+            if item["alternatives"]:
+                st.text("Did you mean: " + ", ".join(item["alternatives"]) + "?")
+            else:
+                st.caption("No reliable spelling suggestion was found.")
+            st.caption("Or is this a name?")
+            if st.button(
+                "This is a name", key=f"name_{turn_id}_{label}_{item['word']}"
+            ):
+                st.session_state.spelling_names = names | {item["word"].casefold()}
+                st.rerun()
+        if spellings:
+            st.caption(
+                "Names you confirm are remembered until this browser app session ends."
+            )
+            st.caption(
+                "These are suggestions, not automatic replacements. Choose only wording that matches what you mean."
+            )
 
 
 def render_turn(turn, *, include_reply=True):
@@ -59,8 +88,8 @@ def render_turn(turn, *, include_reply=True):
         st.text(turn["learner_text"])
         st.divider()
         st.caption("Pointers:")
-        feedback(turn.get("quick"), "Quick correction")
-        feedback(turn.get("grammar"), "Full grammar check")
+        feedback(turn.get("quick"), "Quick feedback", turn["id"])
+        feedback(turn.get("grammar"), "Full grammar check", turn["id"])
         state = turn.get("job_state")
         if state in {"pending", "running"}:
             st.caption(
@@ -162,8 +191,10 @@ def main():
     st.session_state.setdefault("draft", "")
     if "pending_transcript" in st.session_state:
         st.session_state.draft = st.session_state.pop("pending_transcript")
+        st.session_state.recorded_draft = st.session_state.draft
     if st.session_state.pop("clear_draft", False):
         st.session_state.draft = ""
+        st.session_state.pop("recorded_draft", None)
         reset_recording()
     try:
         storage.initialize(DB_PATH)
@@ -317,6 +348,9 @@ def main():
                             st.session_state.draft,
                             session,
                             full_grammar=full,
+                            spelling=st.session_state.draft
+                            != st.session_state.get("recorded_draft"),
+                            names=st.session_state.get("spelling_names", set()),
                             path=DB_PATH,
                         )
                     if saved:

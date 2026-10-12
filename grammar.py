@@ -252,7 +252,14 @@ def evidence(original, proposed, raw):
     return result
 
 
-RULES = {"DID_PAST", "HE_VERB_AGR", "MD_BASEFORM", "NON3PRS_VERB", *DO_RULES}
+RULES = {
+    "DID_PAST",
+    "HE_VERB_AGR",
+    "MD_BASEFORM",
+    "NON3PRS_VERB",
+    "EN_A_VS_AN",
+    *DO_RULES,
+}
 
 
 def _present_forms(verb):
@@ -295,6 +302,13 @@ def _select(text, raw):
             r"\b(?:yesterday|ago|last|earlier|previously|once|used to|(?:19|20)\d{2})\b",
             text,
             re.IGNORECASE,
+        ):
+            return empty
+    elif rule == "EN_A_VS_AN":
+        if (
+            old not in {"a", "an"}
+            or (prefix and not prefix[-1].isspace())
+            or not re.match(r"\s+[A-Za-z]", text[end:])
         ):
             return empty
     elif rule in {"MD_BASEFORM", "NON3PRS_VERB"}:
@@ -347,14 +361,78 @@ UNAVAILABLE = {
 }
 
 
-async def quick_check(text):
+def spelling_suggestions(text, raw, history=(), names=()):
+    """Optional dictionary alternatives, never evidence for rewriting a sentence."""
+    word_pattern = r"[^\W\d_]+(?:[-'’][^\W\d_]+)*"
+    names = {name.casefold() for name in names}
+    for source in [row["learner_text"] for row in history] + [text]:
+        for match in re.finditer(
+            rf"(?i:my name is|call me|named|name is)\s+({word_pattern})"
+            rf"|(?i:I am|I'm|I’m)\s+([A-Z][\w'’-]*)",
+            source,
+        ):
+            names.add(next(value for value in match.groups() if value).casefold())
+    suggestions = []
+    for match in raw["matches"]:
+        if match["rule"]["id"] != "MORFOLOGIK_RULE_EN_US":
+            continue
+        start, end = utf16_span(text, match["offset"], match["length"])
+        word = text[start:end]
+        if not re.fullmatch(word_pattern, word) or not 2 <= len(word) <= 40:
+            continue
+        if (start and (text[start - 1].isalnum() or text[start - 1] in "_@/")) or (
+            end < len(text) and (text[end].isalnum() or text[end] in "_@/")
+        ):
+            continue
+        context = match["context"]
+        left, right = utf16_span(context["text"], context["offset"], context["length"])
+        if context["text"][left:right] != word or context["text"] not in text:
+            raise ValueError("Mismatched spelling evidence")
+        if word.casefold() in names:
+            continue
+        alternatives = []
+        for replacement in match["replacements"]:
+            value = replacement["value"]
+            if (
+                isinstance(value, str)
+                and re.fullmatch(word_pattern, value)
+                and value.casefold() != word.casefold()
+                and len(value) <= 40
+                and value.casefold() not in [v.casefold() for v in alternatives]
+            ):
+                alternatives.append(value)
+            if len(alternatives) == 3:
+                break
+        if not any(item["word"] == word for item in suggestions):
+            suggestions.append({"word": word, "alternatives": alternatives})
+        if len(suggestions) == 5:
+            break
+    return suggestions
+
+
+async def quick_check(text, *, history=(), spelling=True, names=()):
     validate_text(text)
     try:
         async with asyncio.timeout(0.3):
-            result = _select(text, await local.check(text, budget=0.25))
-            return result if result["state"] == "offered" else dict(NO_CORRECTION)
+            raw = await local.check(text, budget=0.25)
+            result = _select(text, raw)
+            result = result if result["state"] == "offered" else dict(NO_CORRECTION)
+            suggestions = (
+                spelling_suggestions(text, raw, history, names) if spelling else []
+            )
+            if suggestions:
+                result["spelling"] = suggestions
+                if result["state"] != "offered":
+                    result["state"] = "spelling"
+                    result["message"] = (
+                        "Review these possible spelling issues. Your original message has not been changed."
+                    )
+            return result
     except (TimeoutError, ServiceError, ValueError, TypeError, KeyError):
-        return dict(UNAVAILABLE)
+        return {
+            "state": "unavailable",
+            "message": "Quick feedback could not finish within its short time limit, or LanguageTool could not be reached or verified. Check LanguageTool; the separate full check may still finish.",
+        }
 
 
 async def count_evidence(text):
@@ -362,7 +440,10 @@ async def count_evidence(text):
     directory = Path(
         os.environ.get("SPEAKWELL_LT_DIR", ".tools/LanguageTool-6.6")
     ).resolve()
-    java = os.environ.get("SPEAKWELL_JAVA", "java")
+    bundled_java = Path(__file__).parent / ".tools/java"
+    java = os.environ.get(
+        "SPEAKWELL_JAVA", str(bundled_java) if bundled_java.is_file() else "java"
+    )
     jar = directory / "languagetool-commandline.jar"
     if not jar.is_file():
         raise ServiceError()
@@ -412,6 +493,7 @@ async def full_check(text):
             "state": "unsupported",
             "message": "Full grammar checks support single-line messages.",
         }
+    stage = "model"
     try:
         async with asyncio.timeout(55):
             proposal = await local.generate(
@@ -445,6 +527,7 @@ async def full_check(text):
                 raise ServiceError()
             if corrected == text:
                 return dict(NO_CORRECTION)
+            stage = "checker"
             raw = await local.check(text)
             decision = evidence(text, corrected, raw)
             # The supplemental rule only matches a simple counted object phrase.
@@ -454,6 +537,7 @@ async def full_check(text):
                 text,
                 re.IGNORECASE,
             ):
+                stage = "count"
                 extra = await count_evidence(text)
                 decision = evidence(
                     text, corrected, {"matches": raw["matches"] + extra["matches"]}
@@ -467,4 +551,9 @@ async def full_check(text):
                 "rule_id": decision["rule_id"],
             }
     except (PracticeError, TimeoutError, OSError, ValueError, TypeError, KeyError):
-        return dict(UNAVAILABLE)
+        messages = {
+            "model": "Full feedback could not get a usable suggestion from the local model in time. Check Ollama and the qwen3:4b model.",
+            "checker": "Full feedback could not verify the suggestion with LanguageTool. Check that LanguageTool 6.6 is running.",
+            "count": "Full feedback could not run the extra number/plural check. Check the LanguageTool installation and Java setting (SPEAKWELL_LT_DIR and SPEAKWELL_JAVA).",
+        }
+        return {"state": "unavailable", "message": messages[stage]}

@@ -290,3 +290,186 @@ def test_plain_language_verb_explanations(text, old, new, rule, phrase):
     assert all(
         term not in result["explanation"] for term in ("basic form", "subject", "tense")
     )
+
+
+@pytest.mark.parametrize(
+    "text,old,new",
+    [
+        ("I met a elephant.", "a", "an"),
+        ("She has an dog.", "an", "a"),
+        ("It takes a hour.", "a", "an"),
+    ],
+)
+def test_article_feedback_uses_checker_evidence(text, old, new):
+    raw = evidence(text, old, [new], "EN_A_VS_AN")
+    offset = text.index(f" {old} ") + 1
+    raw["matches"][0]["offset"] = offset
+    raw["matches"][0]["context"]["offset"] = offset
+    result = grammar._select(text, raw)
+    assert result["state"] == "offered"
+    assert result["corrected_text"] == text[:offset] + new + text[offset + len(old) :]
+
+
+@pytest.mark.parametrize(
+    "text", ['He wrote "a elephant."', "I met a elephant and a owl."]
+)
+def test_article_feedback_withholds_quoted_or_compound_text(text):
+    assert (
+        grammar._select(text, evidence(text, "a", ["an"], "EN_A_VS_AN"))["state"]
+        == "no_supported_correction"
+    )
+
+
+@pytest.mark.parametrize(
+    "stage,expected",
+    [("model", "Ollama"), ("checker", "LanguageTool 6.6"), ("count", "SPEAKWELL_JAVA")],
+)
+def test_full_feedback_identifies_failed_stage(monkeypatch, stage, expected):
+    from unittest.mock import AsyncMock
+
+    text = "I bought three apple."
+    generate = AsyncMock(return_value={"corrected_text": "I bought three apples."})
+    check = AsyncMock(return_value=evidence(text))
+    count = AsyncMock(return_value={"matches": []})
+    {"model": generate, "checker": check, "count": count}[
+        stage
+    ].side_effect = ServiceError()
+    monkeypatch.setattr(grammar.local, "generate", generate)
+    monkeypatch.setattr(grammar.local, "check", check)
+    monkeypatch.setattr(grammar, "count_evidence", count)
+    result = asyncio.run(grammar.full_check(text))
+    assert result["state"] == "unavailable"
+    assert expected in result["message"]
+    assert text not in result["message"]
+
+
+def test_quick_failure_does_not_blame_model(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr(grammar.local, "check", AsyncMock(side_effect=ServiceError()))
+    result = asyncio.run(grammar.quick_check("Hello."))
+    assert result["state"] == "unavailable"
+    assert "LanguageTool" in result["message"]
+    assert "Ollama" not in result["message"]
+
+
+def test_article_rule_rejects_letter_inside_word():
+    text = "I saw a elephant."
+    assert (
+        grammar._select(text, evidence(text, "a", ["an"], "EN_A_VS_AN"))["state"]
+        == "no_supported_correction"
+    )
+
+
+def spelling_evidence(text, entries):
+    raw = evidence(text)
+    for word, alternatives in entries:
+        raw["matches"].extend(
+            evidence(text, word, alternatives, "MORFOLOGIK_RULE_EN_US")["matches"]
+        )
+    return raw
+
+
+def test_spelling_alternatives_preserve_message_and_introduced_name(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    text = "I am Lovejit and I realy like baskteball."
+    raw = spelling_evidence(
+        text,
+        [
+            ("Lovejit", ["Lovejoy"]),
+            ("realy", ["real", "ready", "really"]),
+            ("baskteball", ["basketball"]),
+        ],
+    )
+    monkeypatch.setattr(grammar.local, "check", AsyncMock(return_value=raw))
+    result = asyncio.run(grammar.quick_check(text))
+    assert result["state"] == "spelling"
+    assert [s["word"] for s in result["spelling"]] == ["realy", "baskteball"]
+    assert result["spelling"][1]["alternatives"] == ["basketball"]
+    assert "corrected_text" not in result
+
+
+def test_spelling_protects_name_from_recent_history():
+    text = "lovejit likes drawing."
+    raw = spelling_evidence(text, [("lovejit", ["lovejoy"])])
+    assert (
+        grammar.spelling_suggestions(
+            text, raw, [{"learner_text": "My name is lovejit."}]
+        )
+        == []
+    )
+
+
+def test_spelling_capitalized_unknowns_offer_optional_alternatives():
+    text = "I met Lovejit in Zorvania."
+    raw = spelling_evidence(text, [("Lovejit", ["Lovejoy"]), ("Zorvania", ["Romania"])])
+    suggestions = grammar.spelling_suggestions(text, raw)
+    assert len(suggestions) == 2
+    assert suggestions[0]["alternatives"] == ["Lovejoy"]
+    assert suggestions[1]["alternatives"] == ["Romania"]
+
+
+def test_spelling_rejects_splitting_and_unsafe_alternatives():
+    text = "I like basketballing."
+    raw = spelling_evidence(
+        text,
+        [
+            (
+                "basketballing",
+                [
+                    "basket balling",
+                    "<script>",
+                    "https://example.com",
+                    "Basketball",
+                    "basketball",
+                    "basketball",
+                ],
+            )
+        ],
+    )
+    assert grammar.spelling_suggestions(text, raw) == [
+        {"word": "basketballing", "alternatives": ["Basketball"]}
+    ]
+
+
+def test_spelling_does_not_invent_word_choice_replacement():
+    text = "I am Lovejit and I like Basketballing."
+    raw = spelling_evidence(
+        text, [("Lovejit", ["Lovejoy"]), ("Basketballing", ["Basket balling"])]
+    )
+    assert grammar.spelling_suggestions(text, raw) == [
+        {"word": "Basketballing", "alternatives": []}
+    ]
+
+
+def test_spelling_unicode_offsets_and_mismatched_evidence():
+    text = "😀 I recieved it."
+    raw = spelling_evidence(text, [("recieved", ["received"])])
+    assert grammar.spelling_suggestions(text, raw)[0]["word"] == "recieved"
+    raw["matches"][0]["context"]["text"] = "wrong text"
+    with pytest.raises(ValueError):
+        grammar.spelling_suggestions(text, raw)
+
+
+def test_spelling_disabled_for_unedited_recording(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    text = "I recieved it."
+    monkeypatch.setattr(
+        grammar.local,
+        "check",
+        AsyncMock(return_value=spelling_evidence(text, [("recieved", ["received"])])),
+    )
+    result = asyncio.run(grammar.quick_check(text, spelling=False))
+    assert "spelling" not in result
+
+
+def test_spelling_runtime_names_are_case_insensitive():
+    text = "I met ZORVANIA and Baskteball."
+    raw = spelling_evidence(
+        text, [("ZORVANIA", ["Romania"]), ("Baskteball", ["Basketball"])]
+    )
+    assert grammar.spelling_suggestions(text, raw, names={"zorvania"}) == [
+        {"word": "Baskteball", "alternatives": ["Basketball"]}
+    ]
