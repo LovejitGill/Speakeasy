@@ -20,7 +20,7 @@ def page(tmp_path, monkeypatch):
     async def reply(*a, **kw):
         return {"reply": "What would you like to add?", "path": "authored"}
 
-    async def quick(*a):
+    async def quick(*a, **kwargs):
         return {"state": "withheld", "message": "No supported correction found."}
 
     monkeypatch.setattr(conversation, "respond", reply)
@@ -213,7 +213,7 @@ def test_transcript_survives_rerun_when_spinner_closes(page, monkeypatch):
 def test_feedback_layout_exposes_correction_and_explanation(page, monkeypatch):
     app, _ = page
 
-    async def quick(text):
+    async def quick(text, **kwargs):
         return {
             "state": "offered",
             "corrected_text": "She can sing.",
@@ -225,9 +225,247 @@ def test_feedback_layout_exposes_correction_and_explanation(page, monkeypatch):
     button(app, "Send").click().run()
     assert not app.exception
     panel = next(
-        e for e in app.expander if e.label == "Quick correction · Suggested edit"
+        e for e in app.expander if e.label == "Quick feedback · Suggested edit"
     )
     assert panel.proto.expanded
     assert any(t.value == "She can sing." for t in panel.text)
     assert any(c.value == "WHY THIS CHANGE" for c in panel.caption)
     assert any(t.value == "She can sings." for t in app.text)
+
+
+def test_session_layout_starts_with_only_opener(page):
+    app, _ = page
+    assert app.title[0].value == "Beginner - Daily Activities"
+    assert any("SpeakEasy" in str(item.proto) for item in app.sidebar.get("html"))
+    assert [item.value for item in app.text] == [
+        conversation.OPENERS["daily activities"]
+    ]
+    assert any(item.value == "Record your response:" for item in app.subheader)
+    assert not any(item.label == "Conversation History" for item in app.expander)
+
+
+def test_session_layout_latest_first_older_below_composer(page):
+    app, path = page
+    sid = storage.sessions(path)[0]["id"]
+    for index in range(3):
+        storage.save_turn(
+            {
+                "id": f"layout-{index}",
+                "session_id": sid,
+                "learner_text": f"Message {index}",
+                "tutor_reply": f"Reply {index}",
+                "path": "authored",
+                "quick": {"state": "withheld"},
+            },
+            grammar=False,
+            path=path,
+        )
+    app.run()
+    assert not app.exception
+    assert [item.value for item in app.text] == [
+        "Message 2",
+        "Reply 2",
+        "Message 1",
+        "Reply 1",
+        "Message 0",
+        "Reply 0",
+    ]
+    older = next(e for e in app.expander if e.label == "Conversation History")
+    assert not older.proto.expanded
+    assert [t.value for t in older.text] == [
+        "Message 1",
+        "Reply 1",
+        "Message 0",
+        "Reply 0",
+    ]
+    nodes = list(app.main)
+    composer_index = next(
+        i
+        for i, n in enumerate(nodes)
+        if getattr(n, "value", None) == "Record your response:"
+    )
+    history_index = next(
+        i
+        for i, n in enumerate(nodes)
+        if getattr(n, "label", None) == "Conversation History"
+    )
+    assert composer_index < history_index
+
+
+def test_session_layout_unsaved_reply_stays_above_saved_history(page):
+    app, path = page
+    sid = storage.sessions(path)[0]["id"]
+    turn = {
+        "id": "saved-layout",
+        "session_id": sid,
+        "learner_text": "Earlier message",
+        "tutor_reply": "Earlier reply",
+        "path": "authored",
+        "quick": {"state": "withheld"},
+    }
+    storage.save_turn(turn, grammar=False, path=path)
+    app.session_state.unsaved = {
+        **turn,
+        "id": "unsaved-layout",
+        "learner_text": "Newest message",
+        "tutor_reply": "Newest reply",
+        "full_grammar": False,
+    }
+    app.run()
+    assert not app.exception
+    assert [t.value for t in app.text] == [
+        "Newest message",
+        "Newest reply",
+        "Earlier message",
+        "Earlier reply",
+    ]
+    assert any("NOT saved" in warning.value for warning in app.warning)
+    assert button(app, "Retry saving reply")
+    assert app.text_area(key="draft").disabled
+
+
+def test_pointers_belong_to_learner_and_reply_shares_composer(page):
+    app, path = page
+    sid = storage.sessions(path)[0]["id"]
+    storage.save_turn(
+        {
+            "id": "pointers-layout",
+            "session_id": sid,
+            "learner_text": "She can sings.",
+            "tutor_reply": "Tell me more.",
+            "path": "authored",
+            "quick": {
+                "state": "offered",
+                "corrected_text": "She can sing.",
+                "explanation": "Say She can sing.",
+            },
+        },
+        grammar=False,
+        path=path,
+    )
+    app.run()
+    assert not app.exception
+    learner = app.chat_message[0]
+    assert any(c.value == "Pointers:" for c in learner.caption)
+    assert any(t.value == "She can sing." for t in learner.text)
+    assert not any(t.value == "Tell me more." for t in learner.text)
+    composer = next(n for n in app.main if getattr(n, "key", None) == "composer")
+    assert any(t.value == "Tell me more." for t in composer.text)
+    assert any(h.value == "Record your response:" for h in composer.subheader)
+    assert [t.value for t in composer.text] == ["Tell me more."]
+
+
+def test_send_accepts_pending_text_without_prior_rerun(page):
+    app, path = page
+    assert not button(app, "Send").disabled
+    app.text_area(key="draft").input("A freshly typed message.")
+    button(app, "Send").click().run()
+    assert not app.exception
+    rows = storage.history(storage.sessions(path)[0]["id"], path)
+    assert len(rows) == 1
+    assert rows[0]["learner_text"] == "A freshly typed message."
+
+
+def test_enabled_send_still_rejects_empty_input(page):
+    app, path = page
+    button(app, "Send").click().run()
+    assert not app.exception and app.error
+    assert storage.history(storage.sessions(path)[0]["id"], path) == []
+
+
+@pytest.mark.parametrize("state", ["withheld", "unavailable"])
+def test_quick_feedback_encourages_only_completed_checks(page, monkeypatch, state):
+    app, _ = page
+
+    async def quick(text, **kwargs):
+        return {
+            "state": state,
+            "message": "No supported correction found. This does not mean the message is error-free."
+            if state == "withheld"
+            else "Grammar feedback could not finish.",
+        }
+
+    monkeypatch.setattr(grammar, "quick_check", quick)
+    app.text_area(key="draft").input("I like books.")
+    button(app, "Send").click().run()
+    assert not app.exception
+    panel = next(e for e in app.expander if e.label.startswith("Quick feedback"))
+    if state == "withheld":
+        assert "Nice effort! No supported corrections found." in panel.label
+        assert any("does not mean" in c.value for c in panel.caption)
+    else:
+        assert "Unavailable" in panel.label
+        assert "Nice effort" not in panel.label
+
+
+def test_spelling_feedback_is_optional_and_keeps_saved_original(page, monkeypatch):
+    app, path = page
+
+    async def quick(text, **kwargs):
+        assert kwargs["spelling"] is True
+        return {
+            "state": "spelling",
+            "message": "Review possible spellings.",
+            "spelling": [{"word": "baskteball", "alternatives": ["basketball"]}],
+        }
+
+    monkeypatch.setattr(grammar, "quick_check", quick)
+    app.text_area(key="draft").input("I like baskteball.")
+    button(app, "Send").click().run()
+    assert not app.exception
+    panel = next(
+        e for e in app.expander if e.label == "Quick feedback · Spelling to review"
+    )
+    assert panel.proto.expanded
+    assert any(t.value == "Did you mean: basketball?" for t in panel.text)
+    rows = storage.history(storage.sessions(path)[0]["id"], path)
+    assert rows[0]["learner_text"] == "I like baskteball."
+
+
+@pytest.mark.parametrize("edit", [False, True])
+def test_recorded_draft_spelling_enabled_only_after_edit(page, monkeypatch, edit):
+    app, _ = page
+    mock_recording(monkeypatch, "I like books.")
+    flags = []
+
+    async def quick(text, **kwargs):
+        flags.append(kwargs["spelling"])
+        return {"state": "withheld"}
+
+    monkeypatch.setattr(grammar, "quick_check", quick)
+    app.run()
+    if edit:
+        app.text_area(key="draft").input("I like boooks.")
+    button(app, "Send").click().run()
+    assert not app.exception
+    assert flags == [edit]
+
+
+def test_confirm_spelling_name_is_runtime_only_and_preserves_text(page, monkeypatch):
+    app, path = page
+    seen = []
+
+    async def quick(text, **kwargs):
+        seen.append(kwargs["names"])
+        return {
+            "state": "spelling",
+            "spelling": [{"word": "Zorvania", "alternatives": ["Romania"]}],
+        }
+
+    monkeypatch.setattr(grammar, "quick_check", quick)
+    app.text_area(key="draft").input("I visited Zorvania.")
+    button(app, "Send").click().run()
+    assert any(t.value == "Did you mean: Romania?" for t in app.text)
+    button(app, "This is a name").click().run()
+    assert not app.exception
+    assert app.session_state["spelling_names"] == {"zorvania"}
+    assert not any(t.value == "Check this word: Zorvania" for t in app.text)
+    app.text_area(key="draft").input("Zorvania is beautiful.")
+    button(app, "Send").click().run()
+    assert seen[-1] == {"zorvania"}
+    rows = storage.history(storage.sessions(path)[0]["id"], path)
+    assert rows[0]["learner_text"] == "I visited Zorvania."
+    fresh = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py")
+    fresh.query_params["session"] = rows[0]["session_id"]
+    fresh.run()
+    assert "spelling_names" not in fresh.session_state

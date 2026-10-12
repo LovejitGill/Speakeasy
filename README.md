@@ -28,7 +28,7 @@ It focuses on one conversation workflow with straightforward Python modules.
 - **Reviewed voice input:** record, transcribe locally with Whisper, edit, then
   explicitly send. Recordings and transcripts never submit themselves.
 - **Two grammar checks:** quick evidence-backed suggestions for simple agreement,
-  auxiliary-do, and modal-verb errors, plus an optional full check
+  auxiliary-do, modal-verb, and a/an errors, plus an optional full check
   using a model proposal corroborated by local grammar rules. Unsupported edits
   are withheld; no correction found does not mean error-free English.
 - **Saved sessions:** restore completed turns after refresh. If saving fails, keep
@@ -128,6 +128,24 @@ always requires clicking **Send**. Record 0.3–60 seconds;
 the app accepts mono, 16 kHz PCM16 WAV audio up to 2 MB. Silence, unclear speech,
 and recoverable transcription failures leave existing drafts available.
 
+Quick feedback also shows optional spelling alternatives for typed messages and
+edited transcripts. It never changes the submitted message. Simple introduced
+names from the current message and bounded recent history are skipped; other
+capitalized unknown words receive optional “Did you mean” alternatives too.
+Choose “This is a name” to skip that word (regardless of case) for the current
+browser app session. Confirmed names are not stored in the database. Alternatives are dictionary suggestions, not verified word-choice
+corrections. Untouched recording transcripts do not receive spelling suggestions.
+
+Quick feedback also includes narrow local phrase rules: missing articles before
+common jobs, “interested in,” “depend on,” “listen to music,” “enjoy swimming,”
+“like playing basketball,” “look forward to meeting you,” “married to him,”
+and “go home.” A matching phrase returns immediately without a
+service request; that turn does not also receive spelling suggestions. These
+rules suggest one edit, preserve surrounding wording, and withhold quoted text
+or multiple phrase matches. They are limited coverage, not a complete grammar
+assessment. Full checks still run independently; their proposed sentence must
+match the same rule exactly to use its explanation.
+
 ## Configuration
 
 Set environment variables in the terminals that launch the relevant services.
@@ -138,7 +156,7 @@ Paths below are relative to the repository unless otherwise noted.
 | `SPEAKWELL_DB_PATH` | `data/practice.sqlite3` | SQLite database |
 | `SPEAKWELL_SPEECH_MODEL` | `.models/faster-whisper-base.en` | Existing local Whisper model folder |
 | `SPEAKWELL_LT_DIR` | `.tools/LanguageTool-6.6` | Checker installation; set for both the app and checker launcher |
-| `SPEAKWELL_JAVA` | `java` on PATH | Java executable; set for both the app and checker launcher |
+| `SPEAKWELL_JAVA` | `.tools/java` when present, otherwise `java` on PATH | Java executable; set for both the app and checker launcher |
 | `SPEAKWELL_OLLAMA` | `ollama` on PATH | Ollama executable used by the launcher |
 
 Inference addresses are fixed to local services. Proxy settings and HTTP redirects
@@ -255,3 +273,14 @@ conservative correction validation.
 ## License
 
 MIT — see [LICENSE](LICENSE). Third-party models and libraries retain their own licenses.
+
+Grammar failures identify the failed stage: Ollama proposal, LanguageTool
+verification, or supplemental number/plural check. If the supplemental check
+fails, install the checker with `uv run python tools/setup.py checker` and set
+`SPEAKWELL_JAVA` to a working Java executable when launching the app. An optional
+local `.tools/java` executable/link is also supported. Quick feedback retains
+its short deadline; a quick-check failure does not cancel the separate full check.
+
+After changing grammar or worker code, restart the Streamlit process. A browser
+refresh alone may retain a cached worker using the previous implementation.
+Previously saved feedback is not automatically recalculated.

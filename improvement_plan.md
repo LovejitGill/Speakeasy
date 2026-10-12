@@ -140,3 +140,66 @@ production-readiness claims are not established.
   overflow using synthetic content and a temporary database.
 - Conversation selection still hit its 1.4 s fallback budget in the sampled run.
   Cold-model latency and model contention remain; no overall speed guarantee.
+
+### Session-focused layout
+- SpeakEasy branding and a level/scenario title replace the previous banner.
+- Latest message/reply appear above Record your response. Earlier turns live in
+  collapsed Convo below it, newest first; new sessions show only the opener.
+- Three new layout tests pass, including unsaved reply visibility. Desktop/mobile
+  Chrome checks passed without horizontal overflow. No full-suite rerun.
+
+- Pointers now sit under the learner message. The latest tutor reply and recording
+  controls share one composer section. New focused layout regression passed;
+  grammar feedback still refreshes independently of the editable draft.
+
+### Unavailable feedback diagnosis and article coverage
+- Live LanguageTool and both model identities verified. Quick checks succeeded
+  in this diagnostic; a current quick timeout was not reproduced.
+- Reproduced unavailable full count feedback from a missing default checker
+  installation. Copied the existing LanguageTool dependency into ignored .tools
+  and linked the existing Java runtime; source/reference files were unchanged.
+  The live plural example now offers “I bought three apples.”
+- Full errors identify proposal/checker/count stage without exposing learner text
+  or raw errors. Quick errors point to checker availability/verification or budget.
+- Added a/an quick feedback using exact LanguageTool evidence, standalone article
+  boundaries, and existing ambiguity restrictions. Two live article examples pass.
+- Ten new tests passed; no full-suite run. Python lint/format, shell syntax, and
+  whitespace checks passed. Previous saved failure results are not rewritten.
+
+- Follow-up: the running app retained the old cached grammar worker. Restarted
+  port 8502 with the existing Java 21 runtime. Rechecking the user's failed input
+  without saving a turn completed in 2.79 s with withheld feedback, not unavailable.
+  Documented that backend edits require a process restart, not just browser refresh.
+
+### Optional spelling suggestions
+- Reuse the existing local quick-check response; no extra service call or model.
+  Show up to three single-word alternatives for up to five flagged words, never
+  rewriting the learner message or conversation history.
+- Skip simple introduced names in current/bounded recent learner text. Capitalized
+  unknowns receive optional alternatives; multiword splits are withheld.
+  Learners can confirm names in a browser-session dictionary, without changing saved text.
+  Name detection is conservative, not comprehensive named-entity recognition.
+- Typed messages and edited transcripts receive suggestions; untouched transcripts
+  do not. Feedback displays safely as plain text and persists in existing JSON.
+- Ten new tests passed, including names, Unicode evidence, malicious alternatives,
+  unchanged saved input, and recording/edit provenance. Three live LanguageTool
+  examples passed. Full suite not run; changed Python lint/format checks passed.
+
+- Capitalized suggestions and runtime name confirmation: three focused tests passed;
+  changed Python lint and diff checks passed. No additional service requests.
+
+### Common grammar and expressions
+- Added narrow phrase rules for job articles, enjoy + activity, interested in,
+  depend on, listen to music, and playing basketball; enabled sentence-initial
+  a/an checker suggestions. Exact full-check proposals share the phrase rules.
+- Matching quick phrases need no service request. Quoted/name contexts and
+  multiple phrase matches are withheld; surrounding text and negation stay intact.
+- 31 new focused tests passed; live LanguageTool 6.6 confirmed the initial article
+  evidence. No full suite or new browser/microphone verification performed.
+- Coverage remains deliberately bounded. Next: collect learner examples to extend
+  phrase coverage without accepting ambiguous preposition or meaning changes.
+
+- Small follow-up: added look forward to + meeting/seeing/visiting, married to
+  a pronoun at sentence end, and go/come home. Guards preserve “married with
+  children,” “with her parents present,” and “to Home Depot.”
+  19 new focused cases passed; no added dependencies or service requests.

@@ -40,6 +40,112 @@ FIXED = {
 }
 
 
+# Narrow phrase rules: preserve surrounding words, person, tense and negation.
+# Avoid broad guesses such as replacing every "in" with "at".
+COMMON_PHRASES = (
+    (
+        "PLAY_BASKETBALL",
+        r"\b(?P<verb>like|likes|love|loves|enjoy|enjoys|prefer|prefers)\s+(?P<edit>basketballing)\b",
+        "playing basketball",
+        "Say ‘playing basketball’ for the activity. For example: ‘I like playing basketball.’",
+    ),
+    (
+        "INTERESTED_IN",
+        r"\binterested\s+(?P<edit>on)\s+(?:learning|playing|reading|cooking|music|sports|basketball)\b",
+        "in",
+        "Say ‘interested in’ when talking about something you want to learn about or do.",
+    ),
+    (
+        "DEPEND_ON_PHRASE",
+        r"\b(?:depend|depends|depended|depending)\s+(?P<edit>of)\s+(?:me|you|him|her|us|them|the weather)\b",
+        "on",
+        "Say ‘depend on’ when you need someone or something, or when it affects what happens.",
+    ),
+    (
+        "LISTEN_TO_MUSIC",
+        r"\b(?:listen|listens|listened|listening)\s+(?P<edit>music)\b",
+        "to music",
+        "Put ‘to’ after ‘listen’: ‘listen to music’.",
+    ),
+    (
+        "ENJOY_ACTIVITY",
+        r"\b(?:enjoy|enjoys|enjoyed)\s+(?P<edit>to (?P<activity>play|read|cook|swim|run))\b",
+        None,
+        "After ‘enjoy’, use an ‘-ing’ word: ‘enjoy playing’, for example.",
+    ),
+    (
+        "LOOK_FORWARD_ACTIVITY",
+        r"\b(?:look|looks|looked|looking)\s+forward\s+to\s+(?P<edit>meet|see|visit)\s+(?:you|him|her|them|us|my|our|the)\b",
+        None,
+        "After ‘look forward to’, use an ‘-ing’ word, such as ‘meeting’.",
+    ),
+    (
+        "MARRIED_TO",
+        r"\b(?:am|is|are|was|were)\s+(?:not\s+)?married\s+(?P<edit>with)\s+(?:me|you|him|her|them)\s*(?=[.!?]|$)",
+        "to",
+        "Use ‘married to’ before the person: ‘She is married to him.’",
+    ),
+    (
+        "GO_HOME",
+        r"\b(?:go|goes|going|went|come|comes|coming|came)\s+(?P<edit>to home)\s*(?=[.!?,]|$)",
+        "home",
+        "Say ‘go home’ or ‘come home’. You do not need ‘to’ before ‘home’ here.",
+    ),
+    (
+        "JOB_ARTICLE",
+        r"\b(?:I am|he is|she is|you are)\s+(?P<edit>teacher|doctor|nurse|engineer|student|accountant)\s*(?=[.!?]|$)",
+        None,
+        "When saying what someone's job is, put ‘a’ or ‘an’ before the job: ‘a teacher’ or ‘an engineer’. Use ‘a student’ in the same way.",
+    ),
+)
+
+
+def common_feedback(text, names=()):
+    """Offer one unambiguous phrase edit; never rewrite quoted wording or names."""
+    if re.search(r"[\"‘’“”\n\r]", text) or "'" in text:
+        return None
+    candidates = []
+    for rule, pattern, replacement, message in COMMON_PHRASES:
+        for match in re.finditer(pattern, text, re.IGNORECASE):
+            start, end = match.span("edit")
+            old = text[start:end]
+            if old.casefold() in {name.casefold() for name in names}:
+                continue
+            # Exclude wording introduced as a name, title or explicit quotation.
+            if re.search(
+                r"\b(?:named|called|name is|title is|word is)\b",
+                text[:start],
+                re.IGNORECASE,
+            ):
+                continue
+            if rule == "ENJOY_ACTIVITY":
+                activity = match["activity"].lower()
+                new = {"swim": "swimming", "run": "running"}.get(
+                    activity, activity + "ing"
+                )
+                message = f"After ‘enjoy’, say ‘{new}’, not ‘to {activity}’."
+            elif rule == "LOOK_FORWARD_ACTIVITY":
+                new = old.lower() + "ing"
+                message = f"After ‘look forward to’, say ‘{new}’, not ‘{old.lower()}’. For example: ‘I look forward to meeting you.’"
+            elif rule == "JOB_ARTICLE":
+                article = "an" if old.lower() in {"engineer", "accountant"} else "a"
+                new = article + " " + old.lower()
+                message = f"Say ‘{new}’ when describing one person's role. Put ‘{article}’ before ‘{old.lower()}’."
+            else:
+                new = replacement
+            candidates.append(
+                {
+                    "state": "offered",
+                    "corrected_text": text[:start] + new + text[end:],
+                    "original": old,
+                    "replacement": new,
+                    "explanation": message,
+                    "rule_id": rule,
+                }
+            )
+    return candidates[0] if len(candidates) == 1 else None
+
+
 def explanation(rule, old, new, prefix, text):
     """Use rule semantics, not the checker's potentially vague message text."""
     name = rule["id"]
@@ -91,6 +197,16 @@ def explain_proposal(original, proposed, evidence):
             **empty,
             "state": "no_proposal",
             "reason": "No change proposed; not a correctness claim.",
+        }
+    phrase = common_feedback(original)
+    if phrase and phrase["corrected_text"] == proposed:
+        return {
+            **empty,
+            "state": "provisional",
+            "rule_id": phrase["rule_id"],
+            "explanation": phrase["explanation"],
+            "edit": None,
+            "reason": "Exact match for a narrow local phrase rule.",
         }
     # Preserve the established narrow policy for quotes and compound clauses.
     if re.search(r"[\"'‘’“”\n\r]|\b(?:and|or)\b", original, re.IGNORECASE):
@@ -244,7 +360,7 @@ def evidence(original, proposed, raw):
         ):
             raise ValueError("Mismatched evidence")
     result = explain_proposal(original, proposed, {"matches": matches})
-    if result["state"] == "provisional":
+    if result["state"] == "provisional" and result["edit"] is not None:
         result["explanation"] = (
             sentence_reason(original, result) or result["explanation"]
         )
@@ -252,7 +368,14 @@ def evidence(original, proposed, raw):
     return result
 
 
-RULES = {"DID_PAST", "HE_VERB_AGR", "MD_BASEFORM", "NON3PRS_VERB", *DO_RULES}
+RULES = {
+    "DID_PAST",
+    "HE_VERB_AGR",
+    "MD_BASEFORM",
+    "NON3PRS_VERB",
+    "EN_A_VS_AN",
+    *DO_RULES,
+}
 
 
 def _present_forms(verb):
@@ -283,7 +406,7 @@ def _select(text, raw):
         return empty
     start, end = utf16_span(text, match["offset"], match["length"])
     old, prefix = text[start:end], text[:start]
-    if not re.fullmatch(r"[a-z]+", old):
+    if not re.fullmatch(r"[A-Za-z]+" if rule == "EN_A_VS_AN" else r"[a-z]+", old):
         return empty
     # A context mismatch suggests evidence for another input or invalid offsets.
     context = match["context"]
@@ -295,6 +418,13 @@ def _select(text, raw):
             r"\b(?:yesterday|ago|last|earlier|previously|once|used to|(?:19|20)\d{2})\b",
             text,
             re.IGNORECASE,
+        ):
+            return empty
+    elif rule == "EN_A_VS_AN":
+        if (
+            old.lower() not in {"a", "an"}
+            or (prefix and not prefix[-1].isspace())
+            or not re.match(r"\s+[A-Za-z]", text[end:])
         ):
             return empty
     elif rule in {"MD_BASEFORM", "NON3PRS_VERB"}:
@@ -319,7 +449,10 @@ def _select(text, raw):
         new = replacement["value"]
         if not isinstance(new, str):
             raise TypeError("Malformed replacement")
-        if not re.fullmatch(r"[a-z]+", new) or new == old:
+        if (
+            not re.fullmatch(r"[A-Za-z]+" if rule == "EN_A_VS_AN" else r"[a-z]+", new)
+            or new == old
+        ):
             continue
         if rule == "HE_VERB_AGR" and new not in _present_forms(old):
             continue
@@ -347,14 +480,81 @@ UNAVAILABLE = {
 }
 
 
-async def quick_check(text):
+def spelling_suggestions(text, raw, history=(), names=()):
+    """Optional dictionary alternatives, never evidence for rewriting a sentence."""
+    word_pattern = r"[^\W\d_]+(?:[-'’][^\W\d_]+)*"
+    names = {name.casefold() for name in names}
+    for source in [row["learner_text"] for row in history] + [text]:
+        for match in re.finditer(
+            rf"(?i:my name is|call me|named|name is)\s+({word_pattern})"
+            rf"|(?i:I am|I'm|I’m)\s+([A-Z][\w'’-]*)",
+            source,
+        ):
+            names.add(next(value for value in match.groups() if value).casefold())
+    suggestions = []
+    for match in raw["matches"]:
+        if match["rule"]["id"] != "MORFOLOGIK_RULE_EN_US":
+            continue
+        start, end = utf16_span(text, match["offset"], match["length"])
+        word = text[start:end]
+        if not re.fullmatch(word_pattern, word) or not 2 <= len(word) <= 40:
+            continue
+        if (start and (text[start - 1].isalnum() or text[start - 1] in "_@/")) or (
+            end < len(text) and (text[end].isalnum() or text[end] in "_@/")
+        ):
+            continue
+        context = match["context"]
+        left, right = utf16_span(context["text"], context["offset"], context["length"])
+        if context["text"][left:right] != word or context["text"] not in text:
+            raise ValueError("Mismatched spelling evidence")
+        if word.casefold() in names:
+            continue
+        alternatives = []
+        for replacement in match["replacements"]:
+            value = replacement["value"]
+            if (
+                isinstance(value, str)
+                and re.fullmatch(word_pattern, value)
+                and value.casefold() != word.casefold()
+                and len(value) <= 40
+                and value.casefold() not in [v.casefold() for v in alternatives]
+            ):
+                alternatives.append(value)
+            if len(alternatives) == 3:
+                break
+        if not any(item["word"] == word for item in suggestions):
+            suggestions.append({"word": word, "alternatives": alternatives})
+        if len(suggestions) == 5:
+            break
+    return suggestions
+
+
+async def quick_check(text, *, history=(), spelling=True, names=()):
     validate_text(text)
+    phrase = common_feedback(text, names)
+    if phrase:
+        return phrase
     try:
         async with asyncio.timeout(0.3):
-            result = _select(text, await local.check(text, budget=0.25))
-            return result if result["state"] == "offered" else dict(NO_CORRECTION)
+            raw = await local.check(text, budget=0.25)
+            result = _select(text, raw)
+            result = result if result["state"] == "offered" else dict(NO_CORRECTION)
+            suggestions = (
+                spelling_suggestions(text, raw, history, names) if spelling else []
+            )
+            if suggestions:
+                result["spelling"] = suggestions
+                if result["state"] != "offered":
+                    result["state"] = "spelling"
+                    result["message"] = (
+                        "Review these possible spelling issues. Your original message has not been changed."
+                    )
+            return result
     except (TimeoutError, ServiceError, ValueError, TypeError, KeyError):
-        return dict(UNAVAILABLE)
+        return {
+            "state": "unavailable",
+            "message": "Quick feedback could not finish within its short time limit, or LanguageTool could not be reached or verified. Check LanguageTool; the separate full check may still finish.",
+        }
 
 
 async def count_evidence(text):
@@ -362,7 +562,10 @@ async def count_evidence(text):
     directory = Path(
         os.environ.get("SPEAKWELL_LT_DIR", ".tools/LanguageTool-6.6")
     ).resolve()
-    java = os.environ.get("SPEAKWELL_JAVA", "java")
+    bundled_java = Path(__file__).parent / ".tools/java"
+    java = os.environ.get(
+        "SPEAKWELL_JAVA", str(bundled_java) if bundled_java.is_file() else "java"
+    )
     jar = directory / "languagetool-commandline.jar"
     if not jar.is_file():
         raise ServiceError()
@@ -412,6 +615,7 @@ async def full_check(text):
             "state": "unsupported",
             "message": "Full grammar checks support single-line messages.",
         }
+    stage = "model"
     try:
         async with asyncio.timeout(55):
             proposal = await local.generate(
@@ -445,6 +649,7 @@ async def full_check(text):
                 raise ServiceError()
             if corrected == text:
                 return dict(NO_CORRECTION)
+            stage = "checker"
             raw = await local.check(text)
             decision = evidence(text, corrected, raw)
             # The supplemental rule only matches a simple counted object phrase.
@@ -454,6 +659,7 @@ async def full_check(text):
                 text,
                 re.IGNORECASE,
             ):
+                stage = "count"
                 extra = await count_evidence(text)
                 decision = evidence(
                     text, corrected, {"matches": raw["matches"] + extra["matches"]}
@@ -467,4 +673,9 @@ async def full_check(text):
                 "rule_id": decision["rule_id"],
             }
     except (PracticeError, TimeoutError, OSError, ValueError, TypeError, KeyError):
-        return dict(UNAVAILABLE)
+        messages = {
+            "model": "Full feedback could not get a usable suggestion from the local model in time. Check Ollama and the qwen3:4b model.",
+            "checker": "Full feedback could not verify the suggestion with LanguageTool. Check that LanguageTool 6.6 is running.",
+            "count": "Full feedback could not run the extra number/plural check. Check the LanguageTool installation and Java setting (SPEAKWELL_LT_DIR and SPEAKWELL_JAVA).",
+        }
+        return {"state": "unavailable", "message": messages[stage]}

@@ -16,7 +16,7 @@ def test_independent_requests_overlap_and_save_once(monkeypatch):
         await asyncio.wait_for(ready.wait(), timeout=1)
         return {"reply": "Tell me more.", "path": "authored"}
 
-    async def quick(text):
+    async def quick(text, **kwargs):
         ready.set()
         return {"state": "withheld"}
 
@@ -42,7 +42,7 @@ def test_failed_reply_cancels_quick_work_and_never_saves(monkeypatch):
         await started.wait()
         raise RuntimeError("test failure")
 
-    async def quick(text):
+    async def quick(text, **kwargs):
         started.set()
         try:
             await asyncio.Event().wait()
