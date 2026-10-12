@@ -208,3 +208,26 @@ def test_transcript_survives_rerun_when_spinner_closes(page, monkeypatch):
     assert app.text_area(key="draft").value == "He work."
     transcribe.assert_called_once()
     assert storage.history(storage.sessions(path)[0]["id"], path) == []
+
+
+def test_feedback_layout_exposes_correction_and_explanation(page, monkeypatch):
+    app, _ = page
+
+    async def quick(text):
+        return {
+            "state": "offered",
+            "corrected_text": "She can sing.",
+            "explanation": "After can, use the basic verb form.",
+        }
+
+    monkeypatch.setattr(grammar, "quick_check", quick)
+    app.text_area(key="draft").input("She can sings.").run()
+    button(app, "Send").click().run()
+    assert not app.exception
+    panel = next(
+        e for e in app.expander if e.label == "Quick correction · Suggested edit"
+    )
+    assert panel.proto.expanded
+    assert any(t.value == "She can sing." for t in panel.text)
+    assert any(c.value == "WHY THIS CHANGE" for c in panel.caption)
+    assert any(t.value == "She can sings." for t in app.text)

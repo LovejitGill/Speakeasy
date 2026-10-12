@@ -27,7 +27,8 @@ It focuses on one conversation workflow with straightforward Python modules.
   history, conservative name/hobby recall, and explicit stop/no-follow-up handling.
 - **Reviewed voice input:** record, transcribe locally with Whisper, edit, then
   explicitly send. Recordings and transcripts never submit themselves.
-- **Two grammar checks:** a quick rule-based suggestion and an optional full check
+- **Two grammar checks:** quick evidence-backed suggestions for simple agreement,
+  auxiliary-do, and modal-verb errors, plus an optional full check
   using a model proposal corroborated by local grammar rules. Unsupported edits
   are withheld; no correction found does not mean error-free English.
 - **Saved sessions:** restore completed turns after refresh. If saving fails, keep
@@ -166,6 +167,10 @@ LanguageTool must be version 6.6.
 | Full grammar check | 55 seconds |
 | Transcription | 90 seconds |
 
+Reply selection and quick feedback run concurrently on one event loop; their
+individual budgets are unchanged. Full checks start the supplemental count-rule
+process only for sentences that match its supported structure.
+
 These are software deadlines, not promised response times. Cold model/checker
 requests may exceed the small budgets. Whisper starts a fresh child process for
 each recording, allowing timeout cleanup without saving audio, at the cost of
@@ -189,7 +194,9 @@ safe rendering, draft recovery, and Streamlit session restoration. Most service
 tests use mocks. Real local-service smoke checks also exercised model selection,
 grammar suggestions/abstention, and transcription.
 A later review covered 25 synthetic conversation turns and 10 grammar examples,
-with **13 new regression tests passing**; the full suite was not rerun. It fixed
+with **13 new regression tests passing**; the full suite was not rerun.
+A subsequent latency/rules/layout update passed 13 additional new tests, live
+checker examples, and desktop/mobile browser layout checks. It fixed
 stale recall after an explicit person correction and confirmed remaining gaps in
 topic switching, longer exchanges, and clarification coverage.
 

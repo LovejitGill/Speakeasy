@@ -120,3 +120,23 @@ production-readiness claims are not established.
 - All 13 newly added tests passed; changed Python files passed lint/format checks.
   The existing full suite was deliberately not rerun. This small review does not
   establish general accuracy. Next: topic switches and exhausted follow-ups.
+
+### Response time, feedback rules, and layout
+- Reply selection and quick feedback now overlap on one event loop using a task
+  group; failure cancels sibling work before persistence. No added threads or
+  changes to model identities, service restrictions, or per-operation deadlines.
+- Full checks skip the Java count-rule subprocess for structurally unrelated
+  sentences. In one local before/after sample, a past-tense abstention took
+  6.00 → 2.17 s and a quoted-sentence abstention 6.34 → 3.17 s. The count example
+  remained about 5.7 s. These few observations are not a performance benchmark.
+- Quick checks now support four additional verified local rule IDs for modal and
+  auxiliary-do constructions, retaining exact evidence, unique edits, and context
+  restrictions. All four new examples were offered by the real local checker.
+- Feedback suggestions open visibly with separate sentence/explanation labels;
+  abstentions remain compact, and queued/running statuses use readable labels.
+- All 13 new tests passed, including request overlap/cancellation, rule boundaries,
+  selective subprocess use, and the feedback layout. Only new tests ran; changed
+  files passed lint/format checks. Desktop/mobile Chrome checks showed no horizontal
+  overflow using synthetic content and a temporary database.
+- Conversation selection still hit its 1.4 s fallback budget in the sampled run.
+  Cold-model latency and model contention remain; no overall speed guarantee.
