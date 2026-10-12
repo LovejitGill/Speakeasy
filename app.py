@@ -291,6 +291,9 @@ def main():
                 <div class="sw-feature"><strong>03 · Reflect and return</strong><p>Explore grammar suggestions and pick up a saved conversation whenever you're ready.</p></div>
                 </div>""")
         return
+    st.html(
+        '<div class="sw-brand sw-main-brand"><span class="sw-wordmark">SpeakEasy</span></div>'
+    )
     st.title(f"{session['level'].title()} - {session['scenario'].title()}")
     latest = None
     if not unsaved:

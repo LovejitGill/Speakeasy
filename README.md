@@ -136,6 +136,16 @@ Choose “This is a name” to skip that word (regardless of case) for the curre
 browser app session. Confirmed names are not stored in the database. Alternatives are dictionary suggestions, not verified word-choice
 corrections. Untouched recording transcripts do not receive spelling suggestions.
 
+Quick feedback also includes narrow local phrase rules: missing articles before
+common jobs, “interested in,” “depend on,” “listen to music,” “enjoy swimming,”
+“like playing basketball,” “look forward to meeting you,” “married to him,”
+and “go home.” A matching phrase returns immediately without a
+service request; that turn does not also receive spelling suggestions. These
+rules suggest one edit, preserve surrounding wording, and withhold quoted text
+or multiple phrase matches. They are limited coverage, not a complete grammar
+assessment. Full checks still run independently; their proposed sentence must
+match the same rule exactly to use its explanation.
+
 ## Configuration
 
 Set environment variables in the terminals that launch the relevant services.

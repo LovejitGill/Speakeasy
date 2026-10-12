@@ -187,3 +187,19 @@ production-readiness claims are not established.
 
 - Capitalized suggestions and runtime name confirmation: three focused tests passed;
   changed Python lint and diff checks passed. No additional service requests.
+
+### Common grammar and expressions
+- Added narrow phrase rules for job articles, enjoy + activity, interested in,
+  depend on, listen to music, and playing basketball; enabled sentence-initial
+  a/an checker suggestions. Exact full-check proposals share the phrase rules.
+- Matching quick phrases need no service request. Quoted/name contexts and
+  multiple phrase matches are withheld; surrounding text and negation stay intact.
+- 31 new focused tests passed; live LanguageTool 6.6 confirmed the initial article
+  evidence. No full suite or new browser/microphone verification performed.
+- Coverage remains deliberately bounded. Next: collect learner examples to extend
+  phrase coverage without accepting ambiguous preposition or meaning changes.
+
+- Small follow-up: added look forward to + meeting/seeing/visiting, married to
+  a pronoun at sentence end, and go/come home. Guards preserve “married with
+  children,” “with her parents present,” and “to Home Depot.”
+  19 new focused cases passed; no added dependencies or service requests.

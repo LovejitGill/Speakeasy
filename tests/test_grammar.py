@@ -473,3 +473,142 @@ def test_spelling_runtime_names_are_case_insensitive():
     assert grammar.spelling_suggestions(text, raw, names={"zorvania"}) == [
         {"word": "Baskteball", "alternatives": ["Basketball"]}
     ]
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        (
+            "I am Lovejit and I like Basketballing.",
+            "I am Lovejit and I like playing basketball.",
+        ),
+        ("She does not enjoy basketballing.", "She does not enjoy playing basketball."),
+        ("They prefer basketballing!", "They prefer playing basketball!"),
+        ("I am teacher.", "I am a teacher."),
+        ("She is engineer.", "She is an engineer."),
+        ("You are student", "You are a student"),
+        (
+            "I am interested on learning English.",
+            "I am interested in learning English.",
+        ),
+        ("It depended of the weather.", "It depended on the weather."),
+        ("We are listening music.", "We are listening to music."),
+        ("He enjoys to swim.", "He enjoys swimming."),
+        ("I enjoyed to run.", "I enjoyed running."),
+        ("I enjoy to read.", "I enjoy reading."),
+        ("😀 I like basketballing.", "😀 I like playing basketball."),
+    ],
+)
+def test_common_phrase_coverage(text, expected):
+    result = asyncio.run(grammar.quick_check(text))
+    assert result["state"] == "offered"
+    assert result["corrected_text"] == expected
+    decision = grammar.evidence(text, expected, {"matches": []})
+    assert decision["state"] == "provisional"
+    assert decision["explanation"] == result["explanation"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "I like playing basketball.",
+        "I play with a basketball.",
+        "My name is Basketballing.",
+        "I like a game called Basketballing.",
+        'She said "I like basketballing".',
+        "I am Teacher Smith.",
+        "I am doctor of philosophy.",
+        "I am a teacher.",
+        "I enjoy swimming.",
+        "I am interested in music.",
+        "I listen to music.",
+        "The music depends on the weather.",
+        "I am on the basketball team.",
+        "I enjoy to play and I listen music.",
+    ],
+)
+def test_common_phrase_preserves_supported_and_ambiguous_wording(text):
+    assert grammar.common_feedback(text) is None
+
+
+def test_common_phrase_respects_confirmed_name():
+    assert (
+        grammar.common_feedback("I like Basketballing.", names={"basketballing"})
+        is None
+    )
+
+
+def test_common_phrase_rejects_unrelated_model_rewrite():
+    result = grammar.evidence(
+        "I like basketballing.", "I love playing basketball.", {"matches": []}
+    )
+    assert result["state"] == "withheld"
+
+
+def test_common_phrase_full_check_uses_shared_rule(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr(
+        grammar.local,
+        "generate",
+        AsyncMock(return_value={"corrected_text": "I like playing basketball."}),
+    )
+    monkeypatch.setattr(
+        grammar.local,
+        "check",
+        AsyncMock(return_value=evidence("I like basketballing.")),
+    )
+    result = asyncio.run(grammar.full_check("I like basketballing."))
+    assert result["state"] == "offered"
+    assert result["rule_id"] == "PLAY_BASKETBALL"
+
+
+def test_common_article_sentence_initial():
+    text = "An dog is here."
+    result = grammar._select(text, evidence(text, "An", ["A"], "EN_A_VS_AN"))
+    assert result["corrected_text"] == "A dog is here."
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("I look forward to meet you.", "I look forward to meeting you."),
+        (
+            "She is looking forward to see her family.",
+            "She is looking forward to seeing her family.",
+        ),
+        (
+            "We looked forward to visit the museum.",
+            "We looked forward to visiting the museum.",
+        ),
+        ("She is married with him.", "She is married to him."),
+        ("He was not married with her.", "He was not married to her."),
+        ("I went to home.", "I went home."),
+        ("We are going to home!", "We are going home!"),
+        ("They did not come to home.", "They did not come home."),
+    ],
+)
+def test_small_coverage_expansion(text, expected):
+    result = asyncio.run(grammar.quick_check(text))
+    assert result["corrected_text"] == expected
+    assert grammar.evidence(text, expected, {"matches": []})["state"] == "provisional"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "I look forward to meeting you.",
+        "I look forward to the visit.",
+        "She is married with children.",
+        "She is married with her family's blessing.",
+        "She is married with her parents present.",
+        "I went to Home Depot.",
+        "I go to home games.",
+        "We are going to home school our children.",
+        "They went home.",
+        'He said "I went to home."',
+        "I went to home. She is married with him.",
+    ],
+)
+def test_small_coverage_expansion_preserves_valid_or_ambiguous_text(text):
+    assert grammar.common_feedback(text) is None
