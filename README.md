@@ -183,11 +183,15 @@ uv run --locked ruff format --check .
 uv run --locked python tools/acceptance.py
 ```
 
-The last recorded run passed **189 automated tests**, including service failures,
+The last full-suite run passed **189 automated tests**, including service failures,
 transaction rollback, duplicate workers, interruption recovery, stale results,
 safe rendering, draft recovery, and Streamlit session restoration. Most service
 tests use mocks. Real local-service smoke checks also exercised model selection,
 grammar suggestions/abstention, and transcription.
+A later review covered 25 synthetic conversation turns and 10 grammar examples,
+with **13 new regression tests passing**; the full suite was not rerun. It fixed
+stale recall after an explicit person correction and confirmed remaining gaps in
+topic switching, longer exchanges, and clarification coverage.
 
 The user confirmed recording permissions, playback, transcription, editable review,
 explicit sending, and refresh restoration in the browser. This was a manual check,
@@ -230,7 +234,8 @@ original repository.
 - [x] Initial conversation review and same-message recall correction
 - [x] Relevant short-answer follow-ups for supported questions
 - [x] Useful clarification of supported questions
-- [ ] Broader conversation and grammar review with new examples
+- [x] Broader conversation and grammar review with new examples
+- [ ] Explicit topic switching and longer follow-up coverage
 
 See [improvement_plan.md](improvement_plan.md) for verification notes and next steps.
 

@@ -60,7 +60,7 @@
 ## Remaining work
 
 - Extend question coverage only where new conversation examples justify it.
-- Review broader conversation and grammar coverage with new examples.
+- Improve explicit topic switching and explanations for follow-up questions.
 - General questions and complex statements intentionally have limited coverage.
   Grammar abstains on unsupported/ambiguous changes; no correctness guarantee.
 - Drafts/unsaved replies are memory-only and cannot survive browser refresh.
@@ -101,3 +101,22 @@ production-readiness claims are not established.
 - Supported multi-step reading, task, and food conversations progressed without
   repeated closing replies in this review. Uncovered questions and longer chains
   can still reach generic fallbacks; this is not a general conversation score.
+
+### Broader review with fresh examples
+- Reviewed 25 synthetic turns across gardening, topic changes, person corrections,
+  and food orders; no learner sessions were read or changed.
+- Fixed stale hobby recall after “Not me, my brother.” A narrow explicit person
+  correction now withholds ambiguous prior name/hobby facts, without assigning
+  them to the other person. Fresh explicit declarations restore recall normally.
+- Remaining: longer conversations exhausted follow-ups and repeated closing text;
+  explicit topic switches were generic; some generated questions lacked guides.
+- Reviewed 10 grammar examples with local models and LanguageTool: quick checks
+  offered 2 corrections and withheld 8; full checks offered 4 and withheld 6 after
+  correcting the review process's Java/checker paths. No offered edit changed
+  intended meaning in this sample. Abstention does not mean grammatical correctness.
+- Four initial full checks were unavailable because this shell lacked Java and
+  the supplemental checker path; only those four were retried against the existing
+  installation. No dependencies or model choices changed.
+- All 13 newly added tests passed; changed Python files passed lint/format checks.
+  The existing full suite was deliberately not rerun. This small review does not
+  establish general accuracy. Next: topic switches and exhausted follow-ups.

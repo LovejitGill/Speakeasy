@@ -293,3 +293,14 @@ def test_repeated_opening_clarification():
         run("Could you explain?", history=rows, scenario="ordering food")["reply"]
         == explanation
     )
+
+
+def test_review_recall_after_person_correction_with_no_followup():
+    rows = [
+        pair("How did you get interested in cycling?", "I enjoy cycling."),
+        pair("What would you like to add?", "Not me, my brother."),
+    ]
+    result = run("What do I enjoy? No follow-up.", history=rows)
+    assert "don't have your hobby" in result["reply"]
+    assert "I enjoy cycling" not in result["reply"]
+    assert "?" not in result["reply"]

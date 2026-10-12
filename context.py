@@ -49,6 +49,16 @@ def recall(text, history=()):
         source = row.get("learner_text", "").strip()
         if not source or len(source) > 240 or UNSAFE.search(source):
             continue
+        if re.fullmatch(
+            r"(?:not me[,;]? (?:but )?my [\w-]+|(?:that is|that's|it is|it's) my [\w-]+,? not me)[.!]?",
+            source.replace("’", "'"),
+            re.IGNORECASE,
+        ):
+            # The corrected field is ambiguous. Withhold old personal facts rather
+            # than assigning them to either the learner or the named person.
+            found.clear()
+            topic, changed = None, True
+            continue
         # Each quote is an exact substring; splitting does not rewrite learner facts.
         clauses = re.split(
             r"(?<=[.!])\s+|;\s*| and (?=I (?:enjoy|don't enjoy|don’t enjoy|do not enjoy))",

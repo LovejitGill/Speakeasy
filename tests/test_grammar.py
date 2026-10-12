@@ -136,3 +136,66 @@ def test_unavailable_quick_and_cancellation(monkeypatch):
     monkeypatch.setattr(grammar.local, "check", cancel)
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(grammar.quick_check("Hello"))
+
+
+@pytest.mark.parametrize(
+    "text,old,new,rule,expected",
+    [
+        (
+            "She teach English every Monday.",
+            "teach",
+            "teaches",
+            "HE_VERB_AGR",
+            "offered",
+        ),
+        ("Did they brought their tickets?", "brought", "bring", "DID_PAST", "offered"),
+        (
+            "She work yesterday.",
+            "work",
+            "works",
+            "HE_VERB_AGR",
+            "no_supported_correction",
+        ),
+        (
+            'He said, "She go home."',
+            "go",
+            "goes",
+            "HE_VERB_AGR",
+            "no_supported_correction",
+        ),
+        (
+            "She go to school and he work at home.",
+            "go",
+            "goes",
+            "HE_VERB_AGR",
+            "no_supported_correction",
+        ),
+    ],
+)
+def test_review_new_quick_examples(text, old, new, rule, expected):
+    result = grammar._select(text, evidence(text, old, [new], rule))
+    assert result["state"] == expected
+    if expected == "offered":
+        assert result["corrected_text"] == text.replace(old, new, 1)
+
+
+@pytest.mark.parametrize(
+    "proposal,expected",
+    [("He did not go home.", "offered"), ("He did go home.", "withheld")],
+)
+def test_review_full_correction_preserves_negation(monkeypatch, proposal, expected):
+    text = "He did not went home."
+
+    async def generate(*a, **kw):
+        return {"corrected_text": proposal}
+
+    async def check(*a, **kw):
+        return evidence(text, "went", ["go"], "DID_PAST")
+
+    async def count(*a):
+        return {"matches": []}
+
+    monkeypatch.setattr(grammar.local, "generate", generate)
+    monkeypatch.setattr(grammar.local, "check", check)
+    monkeypatch.setattr(grammar, "count_evidence", count)
+    assert asyncio.run(grammar.full_check(text))["state"] == expected
