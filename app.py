@@ -53,21 +53,12 @@ def feedback(result, label):
             )
 
 
-def render_turn(turn):
+def render_turn(turn, *, include_reply=True):
     with st.chat_message("user"):
         st.caption("YOU")
         st.text(turn["learner_text"])
-    with st.chat_message("assistant"):
-        st.caption("SPEAKWELL")
-        st.text(turn["tutor_reply"])
-        if turn["path"] == "local_fallback":
-            st.caption(
-                "Prepared reply used: the local model was unavailable or its selection was invalid."
-            )
-        elif turn["path"] != "model_selected":
-            st.caption("Prepared response")
         st.divider()
-        st.caption("FEEDBACK ON YOUR MESSAGE")
+        st.caption("Pointers:")
         feedback(turn.get("quick"), "Quick correction")
         feedback(turn.get("grammar"), "Full grammar check")
         state = turn.get("job_state")
@@ -83,23 +74,42 @@ def render_turn(turn):
         elif state == "cancelled":
             st.caption("Full grammar check cancelled.")
 
+    if include_reply:
+        render_reply(turn)
+
+
+def render_reply(turn):
+    with st.chat_message("assistant"):
+        st.caption("SPEAKEASY")
+        st.text(turn["tutor_reply"])
+        if turn["path"] == "local_fallback":
+            st.caption(
+                "Prepared reply used: the local model was unavailable or its selection was invalid."
+            )
+        elif turn["path"] != "model_selected":
+            st.caption("Prepared response")
+
 
 @st.fragment(run_every=2)
-def render_history(session_id):
+def render_history(session, *, older=False):
     try:
         worker(str(DB_PATH)).start()
-        turns = storage.history(session_id, DB_PATH)
+        turns = storage.history(session["id"], DB_PATH)
+        if older:
+            previous = turns if st.session_state.get("unsaved") else turns[:-1]
+            if previous:
+                with st.expander("Conversation History", expanded=False):
+                    for turn in reversed(previous):
+                        render_turn(turn)
+            return
         title, count = st.columns([3, 2], vertical_alignment="center")
         with title:
             st.subheader("Your conversation")
         with count:
             st.caption(f"{len(turns)} completed turns")
-        if not turns:
-            st.info(
-                "Your conversation starts with your first message. Try the prompt above, or tell me what's on your mind."
-            )
-        for turn in turns:
-            render_turn(turn)
+        if turns:
+            render_turn(turns[-1], include_reply=False)
+            return turns[-1]
     except Exception as exc:  # noqa: BLE001 -- safe UI/service boundary
         st.error(user_message(exc))
 
@@ -111,9 +121,6 @@ def reset_recording():
 
 
 def recording():
-    st.caption(
-        "Record a message · 0.3–60 seconds. Stop recording to transcribe automatically."
-    )
     audio = st.audio_input(
         "Record a message",
         sample_rate=16000,
@@ -147,13 +154,11 @@ def recording():
 
 def main():
     st.set_page_config(
-        page_title="Speakwell · English practice", page_icon="💬", layout="wide"
+        page_title="SpeakEasy · English practice", page_icon="💬", layout="wide"
     )
     # Only trusted local styles and authored markup go through st.html.
     st.html("<style>" + STYLE_PATH.read_text() + "</style>")
     st.html('<p class="sw-eyebrow">Your English practice space</p>')
-    st.title("A little practice. More confidence.")
-    st.caption("Make room for a conversation, at your own pace.")
     st.session_state.setdefault("draft", "")
     if "pending_transcript" in st.session_state:
         st.session_state.draft = st.session_state.pop("pending_transcript")
@@ -185,7 +190,7 @@ def main():
     )
     with st.sidebar:
         st.html(
-            '<div class="sw-brand"><span class="sw-mark" aria-hidden="true">s</span><span class="sw-wordmark">speakwell</span></div>'
+            '<div class="sw-brand"><span class="sw-mark" aria-hidden="true">s</span><span class="sw-wordmark">SpeakEasy</span></div>'
         )
         st.caption("ENGLISH · LOCAL PRACTICE")
         st.divider()
@@ -255,12 +260,12 @@ def main():
                 <div class="sw-feature"><strong>03 · Reflect and return</strong><p>Explore grammar suggestions and pick up a saved conversation whenever you're ready.</p></div>
                 </div>""")
         return
-    with st.container(key="session_overview"):
-        st.caption(f"{session['level'].capitalize()} · {session['scenario']}")
-        st.subheader(session["scenario"].capitalize())
-        st.text(conversation.OPENERS[session["scenario"]])
-    render_history(session["id"])
+    st.title(f"{session['level'].title()} - {session['scenario'].title()}")
+    latest = None
+    if not unsaved:
+        latest = render_history(session)
     if unsaved:
+        st.subheader("Your conversation")
         st.warning(
             "This reply is NOT saved. Keep this page open and retry saving. Grammar work has not been queued."
         )
@@ -276,18 +281,28 @@ def main():
                 st.rerun()
             except Exception as exc:  # noqa: BLE001 -- safe UI/service boundary
                 st.error(user_message(exc))
+        render_history(session, older=True)
         return
     with st.container(key="composer"):
-        st.subheader("Your next thought")
-        st.caption(
-            "Type or record a message. Review or edit the text below, then choose Send to confirm."
-        )
+        if latest:
+            render_reply(latest)
+        else:
+            with st.chat_message("assistant"):
+                st.caption("SPEAKEASY")
+                st.text(conversation.OPENERS[session["scenario"]])
+        st.divider()
+        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+            st.subheader("Record your response:", anchor=False, width="content")
+            st.caption(
+                "Record, then review or edit before sending. Speak for 1–60 seconds and click Stop when finished.",
+                width="content",
+            )
         recording()
         st.text_area(
             "Your message",
             key="draft",
             height=140,
-            placeholder="Start with a thought, a story, or a question…",
+            placeholder="You can also type your response here.",
         )
         st.caption(f"{len(st.session_state.draft)}/1,000 characters")
         with st.container(horizontal=True, vertical_alignment="center"):
@@ -295,7 +310,6 @@ def main():
                 "Send",
                 type="primary",
                 icon=":material/arrow_upward:",
-                disabled=not st.session_state.draft.strip(),
             ):
                 try:
                     with st.spinner("Preparing a reply…"):
@@ -315,6 +329,8 @@ def main():
             if st.button("Clear draft", type="tertiary"):
                 st.session_state.clear_draft = True
                 st.rerun()
+
+    render_history(session, older=True)
 
 
 if __name__ == "__main__":

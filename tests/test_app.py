@@ -231,3 +231,141 @@ def test_feedback_layout_exposes_correction_and_explanation(page, monkeypatch):
     assert any(t.value == "She can sing." for t in panel.text)
     assert any(c.value == "WHY THIS CHANGE" for c in panel.caption)
     assert any(t.value == "She can sings." for t in app.text)
+
+
+def test_session_layout_starts_with_only_opener(page):
+    app, _ = page
+    assert app.title[0].value == "Beginner - Daily Activities"
+    assert any("SpeakEasy" in str(item.proto) for item in app.sidebar.get("html"))
+    assert [item.value for item in app.text] == [
+        conversation.OPENERS["daily activities"]
+    ]
+    assert any(item.value == "Record your response:" for item in app.subheader)
+    assert not any(item.label == "Conversation History" for item in app.expander)
+
+
+def test_session_layout_latest_first_older_below_composer(page):
+    app, path = page
+    sid = storage.sessions(path)[0]["id"]
+    for index in range(3):
+        storage.save_turn(
+            {
+                "id": f"layout-{index}",
+                "session_id": sid,
+                "learner_text": f"Message {index}",
+                "tutor_reply": f"Reply {index}",
+                "path": "authored",
+                "quick": {"state": "withheld"},
+            },
+            grammar=False,
+            path=path,
+        )
+    app.run()
+    assert not app.exception
+    assert [item.value for item in app.text] == [
+        "Message 2",
+        "Reply 2",
+        "Message 1",
+        "Reply 1",
+        "Message 0",
+        "Reply 0",
+    ]
+    older = next(e for e in app.expander if e.label == "Conversation History")
+    assert not older.proto.expanded
+    assert [t.value for t in older.text] == [
+        "Message 1",
+        "Reply 1",
+        "Message 0",
+        "Reply 0",
+    ]
+    nodes = list(app.main)
+    composer_index = next(
+        i
+        for i, n in enumerate(nodes)
+        if getattr(n, "value", None) == "Record your response:"
+    )
+    history_index = next(
+        i for i, n in enumerate(nodes) if getattr(n, "label", None) == "Conversation History"
+    )
+    assert composer_index < history_index
+
+
+def test_session_layout_unsaved_reply_stays_above_saved_history(page):
+    app, path = page
+    sid = storage.sessions(path)[0]["id"]
+    turn = {
+        "id": "saved-layout",
+        "session_id": sid,
+        "learner_text": "Earlier message",
+        "tutor_reply": "Earlier reply",
+        "path": "authored",
+        "quick": {"state": "withheld"},
+    }
+    storage.save_turn(turn, grammar=False, path=path)
+    app.session_state.unsaved = {
+        **turn,
+        "id": "unsaved-layout",
+        "learner_text": "Newest message",
+        "tutor_reply": "Newest reply",
+        "full_grammar": False,
+    }
+    app.run()
+    assert not app.exception
+    assert [t.value for t in app.text] == [
+        "Newest message",
+        "Newest reply",
+        "Earlier message",
+        "Earlier reply",
+    ]
+    assert any("NOT saved" in warning.value for warning in app.warning)
+    assert button(app, "Retry saving reply")
+    assert app.text_area(key="draft").disabled
+
+
+def test_pointers_belong_to_learner_and_reply_shares_composer(page):
+    app, path = page
+    sid = storage.sessions(path)[0]["id"]
+    storage.save_turn(
+        {
+            "id": "pointers-layout",
+            "session_id": sid,
+            "learner_text": "She can sings.",
+            "tutor_reply": "Tell me more.",
+            "path": "authored",
+            "quick": {
+                "state": "offered",
+                "corrected_text": "She can sing.",
+                "explanation": "Say She can sing.",
+            },
+        },
+        grammar=False,
+        path=path,
+    )
+    app.run()
+    assert not app.exception
+    learner = app.chat_message[0]
+    assert any(c.value == "Pointers:" for c in learner.caption)
+    assert any(t.value == "She can sing." for t in learner.text)
+    assert not any(t.value == "Tell me more." for t in learner.text)
+    composer = next(n for n in app.main if getattr(n, "key", None) == "composer")
+    assert any(t.value == "Tell me more." for t in composer.text)
+    assert any(h.value == "Record your response:" for h in composer.subheader)
+    assert [t.value for t in composer.text] == ["Tell me more."]
+
+
+def test_send_accepts_pending_text_without_prior_rerun(page):
+    app, path = page
+    assert not button(app, "Send").disabled
+    app.text_area(key="draft").input("A freshly typed message.")
+    button(app, "Send").click().run()
+    assert not app.exception
+    rows = storage.history(storage.sessions(path)[0]["id"], path)
+    assert len(rows) == 1
+    assert rows[0]["learner_text"] == "A freshly typed message."
+
+
+def test_enabled_send_still_rejects_empty_input(page):
+    app, path = page
+    button(app, "Send").click().run()
+    assert not app.exception and app.error
+    assert storage.history(storage.sessions(path)[0]["id"], path) == []

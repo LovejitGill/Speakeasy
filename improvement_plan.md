@@ -140,3 +140,14 @@ production-readiness claims are not established.
   overflow using synthetic content and a temporary database.
 - Conversation selection still hit its 1.4 s fallback budget in the sampled run.
   Cold-model latency and model contention remain; no overall speed guarantee.
+
+### Session-focused layout
+- SpeakEasy branding and a level/scenario title replace the previous banner.
+- Latest message/reply appear above Record your response. Earlier turns live in
+  collapsed Convo below it, newest first; new sessions show only the opener.
+- Three new layout tests pass, including unsaved reply visibility. Desktop/mobile
+  Chrome checks passed without horizontal overflow. No full-suite rerun.
+
+- Pointers now sit under the learner message. The latest tutor reply and recording
+  controls share one composer section. New focused layout regression passed;
+  grammar feedback still refreshes independently of the editable draft.
