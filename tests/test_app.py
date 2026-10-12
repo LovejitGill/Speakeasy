@@ -73,25 +73,68 @@ def test_unsaved_reply_and_retry(page, monkeypatch):
     assert len(storage.history(storage.sessions(path)[0]["id"], path)) == 1
 
 
-def test_transcript_requires_review_then_send(page):
+def mock_recording(monkeypatch, transcript="He work."):
+    from types import SimpleNamespace
+
+    import streamlit as st
+
+    import speech
+
+    recordings = {"audio_0": b"audio"}
+    monkeypatch.setattr(
+        st,
+        "audio_input",
+        lambda *a, **kw: (
+            SimpleNamespace(getvalue=lambda: recordings[kw["key"]])
+            if kw["key"] in recordings
+            else None
+        ),
+    )
+    transcribe = Mock(return_value=transcript)
+    monkeypatch.setattr(speech, "transcribe", transcribe)
+    return recordings, transcribe
+
+
+def test_transcript_requires_review_then_send(page, monkeypatch):
     app, path = page
-    app.session_state.transcript = "He work."
+    _, transcribe = mock_recording(monkeypatch)
     app.run()
     assert not app.exception
-    assert app.text_area(key="draft").value == ""
+    assert len(app.text_area) == 1
+    assert all(item.label != "Record a message" for item in app.expander)
+    assert app.text_area(key="draft").value == "He work."
     assert storage.history(storage.sessions(path)[0]["id"], path) == []
-    app.text_area(key="transcript").input("He works.").run()
-    button(app, "Use reviewed transcript as draft").click().run()
-    assert not app.exception
+    app.text_area(key="draft").input("He works.").run()
+    app.run()
     assert app.text_area(key="draft").value == "He works."
+    transcribe.assert_called_once_with(b"audio")
+    button(app, "Send").click().run()
+    assert not app.exception
+    rows = storage.history(storage.sessions(path)[0]["id"], path)
+    assert len(rows) == 1
+    assert app.text_area(key="draft").value == ""
+    transcribe.assert_called_once()
+
+
+def test_record_again_preserves_draft_until_new_transcript(page, monkeypatch):
+    app, path = page
+    recordings, transcribe = mock_recording(monkeypatch)
+    app.run()
+    button(app, "Record again").click().run()
+    assert app.text_area(key="draft").value == "He work."
+    transcribe.return_value = "I like walking."
+    recordings["audio_1"] = b"second audio"
+    app.run()
+    assert not app.exception
+    assert app.text_area(key="draft").value == "I like walking."
+    assert transcribe.call_count == 2
     assert storage.history(storage.sessions(path)[0]["id"], path) == []
 
 
-def test_long_transcript_validation_preserves_draft(page):
+def test_long_transcript_validation_preserves_draft(page, monkeypatch):
     app, _path = page
-    app.session_state.transcript = "x" * 1001
+    mock_recording(monkeypatch, "x" * 1001)
     app.run()
-    button(app, "Use reviewed transcript as draft").click().run()
     button(app, "Send").click().run()
     assert not app.exception and app.error
     assert len(app.text_area(key="draft").value) == 1001
@@ -104,31 +147,28 @@ def test_learner_content_not_rendered_as_html_or_markdown(page):
     button(app, "Send").click().run()
     assert any(item.value == text for item in app.text)
     assert all(text not in item.value for item in app.markdown)
+    assert all(text not in str(item.proto) for item in app.get("html"))
 
 
-def test_failed_transcription_preserves_both_drafts(page, monkeypatch):
-    from types import SimpleNamespace
-
-    import streamlit as st
-
+def test_failed_transcription_preserves_draft_and_retries_explicitly(page, monkeypatch):
     import speech
 
     app, _path = page
-    app.session_state.transcript = "Earlier editable transcript"
     app.text_area(key="draft").input("Typed draft").run()
-    monkeypatch.setattr(
-        st, "audio_input", lambda *a, **kw: SimpleNamespace(getvalue=lambda: b"audio")
+    _, transcribe = mock_recording(monkeypatch)
+    transcribe.side_effect = speech.SpeechServiceError(
+        "Local transcription failed. Please retry."
     )
-
-    def fail(*a):
-        raise speech.SpeechServiceError("Local transcription failed. Please retry.")
-
-    monkeypatch.setattr(speech, "transcribe", fail)
     app.run()
-    button(app, "Transcribe recording").click().run()
+    app.run()
     assert not app.exception and app.error
     assert app.text_area(key="draft").value == "Typed draft"
-    assert app.text_area(key="transcript").value == "Earlier editable transcript"
+    transcribe.assert_called_once()
+    transcribe.side_effect = None
+    button(app, "Retry transcription").click().run()
+    assert not app.exception and not app.error
+    assert app.text_area(key="draft").value == "He work."
+    assert transcribe.call_count == 2
 
 
 def test_storage_outage_still_shows_unsaved_reply(page, monkeypatch):
@@ -146,3 +186,25 @@ def test_storage_outage_still_shows_unsaved_reply(page, monkeypatch):
     assert any("NOT saved" in item.value for item in app.warning)
     assert any("What would" in item.value for item in app.text)
     assert app.text_area(key="draft").value == "Hello"
+
+
+def test_transcript_survives_rerun_when_spinner_closes(page, monkeypatch):
+    from contextlib import contextmanager
+
+    import streamlit as st
+
+    app, path = page
+    _, transcribe = mock_recording(monkeypatch)
+
+    @contextmanager
+    def interrupted_spinner(text, **kwargs):
+        yield
+        if text == "Transcribing locally…":
+            st.rerun()
+
+    monkeypatch.setattr(st, "spinner", interrupted_spinner)
+    app.run()
+    assert not app.exception
+    assert app.text_area(key="draft").value == "He work."
+    transcribe.assert_called_once()
+    assert storage.history(storage.sessions(path)[0]["id"], path) == []

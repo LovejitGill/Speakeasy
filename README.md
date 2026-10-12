@@ -40,7 +40,7 @@ It focuses on one conversation workflow with straightforward Python modules.
 ```mermaid
 flowchart TD
     UI["Streamlit: settings, recording, editable draft"]
-    UI -->|"Explicit transcription"| STT["Local Whisper base.en"]
+    UI -->|"Recording stopped"| STT["Local Whisper base.en"]
     STT -->|"Transcript for review, never automatic submission"| UI
     UI -->|"Send"| TURN["Turn coordinator"]
     TURN --> CONV["Conversation planner + Qwen3 1.7B selector"]
@@ -55,6 +55,7 @@ flowchart TD
 | Module | Responsibility |
 |---|---|
 | `app.py` | Page controls, recording, editable drafts, and feedback display |
+| `assets/style.css` / `.streamlit/config.toml` | Responsive layout styling and the app-wide color theme |
 | `tutor.py` | Coordinate a reply, quick feedback, and saving |
 | `conversation.py` / `context.py` | Select follow-ups and handle supported facts, people, and food constraints |
 | `grammar.py` | Quick/full checks sharing correction evidence and explanation logic |
@@ -119,8 +120,10 @@ uv run --locked streamlit run app.py
 Open the local URL printed by Streamlit, usually `http://127.0.0.1:8501`.
 Choose a level and scenario, then click **Start new session**.
 
-For voice practice: **Record → Transcribe → Edit transcript → Use as draft → Send**.
-Using the reviewed transcript replaces the typed draft. Record 0.3–60 seconds;
+For voice practice: **Record → Stop → Automatic transcription → Review/edit → Send**.
+The recorder is always visible. A successful transcription replaces the message
+box text; choose **Record again** to retry or edit the text directly. Sending
+always requires clicking **Send**. Record 0.3–60 seconds;
 the app accepts mono, 16 kHz PCM16 WAV audio up to 2 MB. Silence, unclear speech,
 and recoverable transcription failures leave existing drafts available.
 
@@ -180,7 +183,7 @@ uv run --locked ruff format --check .
 uv run --locked python tools/acceptance.py
 ```
 
-The last recorded run passed **155 automated tests**, including service failures,
+The last recorded run passed **157 automated tests**, including service failures,
 transaction rollback, duplicate workers, interruption recovery, stale results,
 safe rendering, draft recovery, and Streamlit session restoration. Most service
 tests use mocks. Real local-service smoke checks also exercised model selection,
@@ -188,7 +191,9 @@ grammar suggestions/abstention, and transcription.
 
 The user confirmed recording permissions, playback, transcription, editable review,
 explicit sending, and refresh restoration in the browser. This was a manual check,
-not browser automation. A separate 24-turn conversation review identified remaining
+not browser automation; the updated automatic-transcription flow has automated
+UI coverage and an isolated Chrome check using injected speech with real local
+Whisper. A fresh physical microphone check remains pending. A separate 24-turn conversation review identified remaining
 continuity and clarification limits. These checks do not establish general
 accuracy or production readiness.
 
