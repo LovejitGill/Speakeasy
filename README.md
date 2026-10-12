@@ -1,13 +1,14 @@
-# 💬 Speakwell
+# 💬 Speakeasy
 
-**Local English practice with reviewed voice input, saved conversations, and evidence-supported grammar feedback.**
+**A Multilingual AI Language Tutor
+Speakeasy is a proposed voice-based language-learning application designed to help users practice multiple languages with a virtual AI tutor. Learners will speak into a microphone, hear the tutor respond, and receive targeted feedback on grammar, vocabulary, coherence, and pronunciation.**
 
 ![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B?logo=streamlit&logoColor=white)
 ![Local inference](https://img.shields.io/badge/Inference-local-287D3C)
 [![MIT License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Speakwell helps learners practise English through typed messages or completed
+Speakeasy helps learners practise English through typed messages or completed
 recordings. Review the transcript before sending, receive a conversational reply,
 and explore supported grammar suggestions. Models run on your computer; completed
 conversations are stored locally in SQLite.
@@ -189,7 +190,7 @@ The user confirmed recording permissions, playback, transcription, editable revi
 explicit sending, and refresh restoration in the browser. This was a manual check,
 not browser automation. A separate 24-turn conversation review identified remaining
 continuity and clarification limits. These checks do not establish general
-accuracy or production readiness; original Speakwell scores do not validate this app.
+accuracy or production readiness.
 
 ## Limitations
 
