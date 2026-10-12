@@ -1,0 +1,14 @@
+.venv/
+.cache/
+.tools/
+.models/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+data/
+.env*
+*.sqlite*
+*.db*
+*.wav
+*.log
+.DS_Store

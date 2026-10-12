@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rules lang="en" name="SpeakWell experimental contextual count rule">
+  <category id="SPEAKWELL_GRAMMAR" name="SpeakWell experimental grammar">
+    <rule id="SPEAKWELL_COUNT_HEAD" name="Counted noun at the end of a simple object phrase">
+      <!-- Use the installed dictionary/tagger and synthesizer, never a noun list.
+           Deliberately limited to pronoun + verb + integer + noun + sentence end. -->
+      <pattern>
+        <token postag="SENT_START"/>
+        <token postag="PRP"/>
+        <token postag="VB|VBP|VBZ|VBD" postag_regexp="yes" chunk="B-VP"/>
+        <token postag="CD" regexp="yes">two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|[2-9]|[1-9][0-9]</token>
+        <marker>
+          <token postag="NN|NN:UN" postag_regexp="yes" chunk="E-NP-singular">
+            <exception postag="NNS|NN:U|NNP|NNPS" postag_regexp="yes"/>
+            <exception regexp="yes" case_sensitive="yes">[A-Z].*</exception>
+          </token>
+        </marker>
+        <token postag="SENT_END" regexp="yes">[.!]</token>
+      </pattern>
+      <message>This number describes more than one item; use the plural noun.</message>
+      <suggestion><match no="5" postag="NNS"/></suggestion>
+      <example correction="bottles">I packed seven <marker>bottle</marker>.</example>
+      <example correction="coins">We found eight <marker>coin</marker>.</example>
+      <example>I packed seven bottles.</example>
+      <example>We found eight coins.</example>
+      <example>We ordered three box sets.</example>
+      <example>I drank two water.</example>
+      <example>I caught three fish.</example>
+      <example>We saw two deer.</example>
+    </rule>
+  </category>
+</rules>
