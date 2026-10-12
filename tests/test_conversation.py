@@ -132,3 +132,164 @@ def test_language_reference_and_unknown():
         "temporarily" in run("What is the difference between lend and borrow?")["reply"]
     )
     assert "supported answer" in run("What is quantum physics?")["reply"]
+
+
+def pair(question, learner="I enjoy reading."):
+    return {"learner_text": learner, "tutor_reply": question}
+
+
+@pytest.mark.parametrize(
+    "question,answer,expected",
+    [
+        (
+            "What do you enjoy most about reading?",
+            "The stories.",
+            "example of what you enjoy about reading",
+        ),
+        (
+            "How did you get interested in reading?",
+            "At school.",
+            "try next with reading",
+        ),
+        ("What were you packing for?", "A holiday.", "decide what to pack"),
+        ("What got in the way?", "A missing tool.", "try first"),
+        ("How did your walk feel?", "Relaxing.", "walk feel that way"),
+        ("How will you prepare it?", "In the oven.", "ingredients"),
+        (
+            "Your sister can't eat dairy. What kind of soup would your sister like?",
+            "Tomato.",
+            "your sister like to have",
+        ),
+    ],
+)
+def test_short_answer_uses_latest_question(question, answer, expected):
+    reply = run(answer, history=[pair(question)])["reply"]
+    assert expected in reply
+    assert "Thank you for sharing" not in reply
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "What do you mean?",
+        "Could you explain?",
+        "Please rephrase your question",
+        "I don't understand",
+        "Can you say that more simply?",
+    ],
+)
+def test_clarification_explains_supported_question(text):
+    reply = run(text, history=[pair("What got in the way?")])["reply"]
+    assert "prevented" in reply
+    assert "previous reply" not in reply
+    assert "?" not in reply
+
+
+@pytest.mark.parametrize(
+    "scenario,expected",
+    [
+        ("daily activities", "today"),
+        ("introductions", "name"),
+        ("ordering food", "waiter"),
+    ],
+)
+def test_clarify_opening_question(scenario, expected):
+    assert expected in run("What do you mean?", scenario=scenario)["reply"]
+
+
+def test_clarification_preserves_question_for_following_answer():
+    rows = [pair("What do you enjoy most about reading?")]
+    explanation = run("What do you mean?", history=rows)["reply"]
+    rows.append(pair(explanation, "What do you mean?"))
+    assert run("Please explain your question", history=rows)["reply"] == explanation
+    assert (
+        "example of what you enjoy about reading"
+        in run("The stories.", history=rows)["reply"]
+    )
+
+
+def test_several_short_answers_progress_without_closing_loop():
+    rows = [pair("What do you enjoy most about reading?")]
+    replies = []
+    for answer in ("The stories.", "Adventure stories.", "On weekends."):
+        reply = run(answer, history=rows)["reply"]
+        replies.append(reply)
+        rows.append(pair(reply, answer))
+    assert len(set(replies)) == 3
+    assert all("reading" in reply and "?" in reply for reply in replies)
+
+
+@pytest.mark.parametrize("answer", ["No.", "Yes.", "I don't know.", "Nothing."])
+def test_uncertain_answer_gets_answering_help_without_inferred_fact(answer):
+    reply = run(answer, history=[pair("How did your walk feel?")])["reply"]
+    assert "Describe how you felt" in reply
+    assert "You can also choose another topic" in reply
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Not me, my sister.",
+        "I never liked it.",
+        '"Relaxing," she said.',
+        "Actually, I prefer swimming.",
+    ],
+)
+def test_short_answer_does_not_presume_person_or_positive_fact(answer):
+    reply = run(answer, history=[pair("What do you enjoy most about reading?")])[
+        "reply"
+    ]
+    assert "enjoy about reading" not in reply
+    assert "You enjoy" not in reply
+
+
+def test_explicit_new_topic_overrides_previous_question():
+    reply = run("I enjoy swimming.", history=[pair("What were you packing for?")])[
+        "reply"
+    ]
+    assert "swimming" in reply and "pack" not in reply
+
+
+def test_clarification_unknown_and_newest_reply_boundaries():
+    rows = [pair("What got in the way?"), pair("An unsupported question?")]
+    assert "checked explanation" in run("What do you mean?", history=rows)["reply"]
+    assert "try first" not in run("A tool.", history=rows)["reply"]
+    assert "?" not in run("Explain your question. No follow-up.", history=rows)["reply"]
+
+
+def test_short_answer_does_not_create_recall_evidence():
+    rows = [
+        pair("Introduce yourself and tell me what you enjoy.", "Hello"),
+        pair("What would you like to share about yourself?", "Alice"),
+    ]
+    assert "don't have your name" in run("What is my name?", history=rows)["reply"]
+
+
+def test_continuation_controls_take_priority():
+    rows = [pair("What got in the way?")]
+    assert run("Stop.", history=rows)["path"] == "stop"
+    assert "?" not in run("A missing tool. No follow-up.", history=rows)["reply"]
+
+
+def test_clarify_uncertain_answer_keeps_original_question():
+    rows = [pair("How did your walk feel?")]
+    help_reply = run("I don't know.", history=rows)["reply"]
+    rows.append(pair(help_reply, "I don't know."))
+    reply = run("What do you mean?", history=rows)["reply"]
+    assert "Describe how you felt during the walk" in reply
+
+
+def test_clarification_does_not_revive_question_outside_bounded_history():
+    rows = [pair("What got in the way?")]
+    explanation = "Describe what prevented you from doing what you wanted to do."
+    rows.extend(pair(explanation, "What do you mean?") for _ in range(4))
+    assert "checked explanation" in run("What do you mean?", history=rows)["reply"]
+
+
+def test_repeated_opening_clarification():
+    explanation = run("What do you mean?", scenario="ordering food")["reply"]
+    rows = [pair(explanation, "What do you mean?")]
+    assert (
+        run("Could you explain?", history=rows, scenario="ordering food")["reply"]
+        == explanation
+    )

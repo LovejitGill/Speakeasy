@@ -59,7 +59,7 @@
 
 ## Remaining work
 
-- Improve short-answer continuity and question clarification without guessing facts.
+- Extend question coverage only where new conversation examples justify it.
 - Review broader conversation and grammar coverage with new examples.
 - General questions and complex statements intentionally have limited coverage.
   Grammar abstains on unsupported/ambiguous changes; no correctness guarantee.
@@ -67,9 +67,9 @@
 - Worker locking currently supports macOS/Linux. CPU model loading can exceed
   the small conversation/quick-check budgets; fallbacks remain explicit.
 
-Next improvement: short-answer continuity and targeted question clarification,
-with regression tests for relevance and avoiding repeated closing replies. Suitable for a feature checkpoint
-once reviewed; broader quality or production-readiness claims are not established.
+Next improvement: review topic switches and longer conversations that exhaust
+prepared follow-ups. This is a feature checkpoint; broader quality or
+production-readiness claims are not established.
 
 ### Direct recording flow
 - Visible recorder automatically transcribes into the single editable message box.
@@ -87,3 +87,17 @@ once reviewed; broader quality or production-readiness claims are not establishe
 - Isolated Chrome recorder with an injected speech sample and real local Whisper
   populated the textbox, retained the transcript across history refresh ticks, and
   did not submit a turn. Physical microphone retest remains pending.
+
+### Short answers and clarification
+- One authored question-guide table in the existing conversation engine supplies
+  relevant next questions and plain-language explanations. No new dependency,
+  service, stored state, or model change.
+- Clarification and uncertain-answer help retain the underlying recent question.
+  Unknown questions, expired context, ambiguous fragments, and person/negation
+  boundaries remain conservative. Short answers do not create recall facts.
+- All 189 tests and lint/format checks pass, including 32 new regression cases.
+  A 12-turn synthetic review passed with live local model selection and authored
+  continuation/clarification responses; learner sessions were not modified.
+- Supported multi-step reading, task, and food conversations progressed without
+  repeated closing replies in this review. Uncovered questions and longer chains
+  can still reach generic fallbacks; this is not a general conversation score.

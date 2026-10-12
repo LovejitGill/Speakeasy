@@ -183,7 +183,7 @@ uv run --locked ruff format --check .
 uv run --locked python tools/acceptance.py
 ```
 
-The last recorded run passed **157 automated tests**, including service failures,
+The last recorded run passed **189 automated tests**, including service failures,
 transaction rollback, duplicate workers, interruption recovery, stale results,
 safe rendering, draft recovery, and Streamlit session restoration. Most service
 tests use mocks. Real local-service smoke checks also exercised model selection,
@@ -199,11 +199,13 @@ accuracy or production readiness.
 
 ## Limitations
 
-- Conversation coverage is intentionally narrow. Short replies can receive generic
-  invitations or repeated closing text; topic changes need better continuity.
+- Short answers use supported recent questions about interests, packing, tasks,
+  walks, cooking, and orders. Clarification explains what answer a supported
+  question is asking for; a following answer retains that question's context.
+  Fragments do not become remembered facts. Ambiguous answers and unsupported
+  questions still fall back; longer conversations can exhaust prepared follow-ups.
 - Checked word explanations cover **lend/borrow** and **teach/learn**. Other direct
-  questions may receive an explicit fallback; clarification currently quotes the
-  prior reply rather than inventing an explanation.
+  questions and unsupported clarification requests receive an explicit fallback.
 - Grammar suggestions are conservative and can still be wrong. Full checks support
   single-line messages; unsupported or ambiguous corrections are withheld.
 - Drafts and unsaved replies are memory-only. Refresh loses them; keep the page
@@ -226,8 +228,8 @@ original repository.
 - [x] Editable recorded input and manual browser/microphone verification
 - [x] Shared grammar evidence and recoverable background checks
 - [x] Initial conversation review and same-message recall correction
-- [ ] More relevant short-answer follow-ups without repeated closing replies
-- [ ] Useful clarification of supported questions
+- [x] Relevant short-answer follow-ups for supported questions
+- [x] Useful clarification of supported questions
 - [ ] Broader conversation and grammar review with new examples
 
 See [improvement_plan.md](improvement_plan.md) for verification notes and next steps.
