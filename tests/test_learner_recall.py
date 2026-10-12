@@ -181,3 +181,30 @@ def test_current_name_update_before_question():
 def test_questions_and_hypotheticals_are_not_fact_evidence(source):
     result = recall("What is my name and hobby?", [row(source)])
     assert result["missing"] == ["name", "hobby"]
+
+
+@pytest.mark.parametrize(
+    "correction",
+    ["Not me, my brother.", "Not me but my sister.", "That's my friend, not me."],
+)
+def test_review_person_correction_withholds_ambiguous_old_facts(correction):
+    result = recall("What do I enjoy?", [row("I enjoy cycling."), row(correction)])
+    assert result["topic"] is None
+    assert result["missing"] == ["hobby"]
+    assert "I enjoy cycling" not in result["prefix"]
+
+
+def test_review_fresh_declaration_after_person_correction():
+    result = recall(
+        "What do I enjoy?",
+        [row("I enjoy cycling."), row("Not me, my brother."), row("I enjoy pottery.")],
+    )
+    assert result["topic"] == "pottery"
+
+
+def test_review_quoted_correction_does_not_reassign_facts():
+    result = recall(
+        "What do I enjoy?",
+        [row("I enjoy cycling."), row('My brother said "not me, my sister."')],
+    )
+    assert result["topic"] == "cycling"

@@ -29,9 +29,19 @@ def worker(path):
 def feedback(result, label):
     if not result:
         return
-    with st.expander(label):
-        if result["state"] == "offered":
+    offered = result["state"] == "offered"
+    status = (
+        "Suggested edit"
+        if offered
+        else (
+            "Unavailable" if result["state"] == "unavailable" else "No supported edit"
+        )
+    )
+    with st.expander(f"{label} · {status}", expanded=offered):
+        if offered:
+            st.caption("SUGGESTED SENTENCE")
             st.text(result["corrected_text"])
+            st.caption("WHY THIS CHANGE")
             st.text(result["explanation"])
             st.caption("Suggested correction; automated feedback can be wrong.")
         else:
@@ -56,11 +66,17 @@ def render_turn(turn):
             )
         elif turn["path"] != "model_selected":
             st.caption("Prepared response")
+        st.divider()
+        st.caption("FEEDBACK ON YOUR MESSAGE")
         feedback(turn.get("quick"), "Quick correction")
         feedback(turn.get("grammar"), "Full grammar check")
         state = turn.get("job_state")
         if state in {"pending", "running"}:
-            st.caption("Full grammar check: " + state)
+            st.caption(
+                "Full grammar check: waiting to start"
+                if state == "pending"
+                else "Full grammar check: checking your message…"
+            )
             if st.button("Cancel grammar check", key="cancel_" + turn["id"]):
                 storage.cancel(turn["id"], DB_PATH)
                 st.rerun()

@@ -14,11 +14,18 @@ def submit(text, session, *, full_grammar=True, path=storage.DEFAULT_PATH):
     rows = storage.history(session["id"], path)
 
     async def respond():
-        reply = await conversation.respond(
-            text, history=rows, level=session["level"], scenario=session["scenario"]
-        )
-        # Quick feedback has a small independent budget; no extra inference thread.
-        return reply, await grammar.quick_check(text)
+        # These independent bounded requests share one event loop, without threads.
+        async with asyncio.TaskGroup() as tasks:
+            reply = tasks.create_task(
+                conversation.respond(
+                    text,
+                    history=rows,
+                    level=session["level"],
+                    scenario=session["scenario"],
+                )
+            )
+            quick = tasks.create_task(grammar.quick_check(text))
+        return reply.result(), quick.result()
 
     reply, quick = asyncio.run(respond())
     turn = {

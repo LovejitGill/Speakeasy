@@ -161,16 +161,16 @@ def sentence_reason(text, decision):
     if rule in {"MD_BASEFORM", "NON3PRS_VERB"}:
         modal = re.search(MODALS, prefix, re.IGNORECASE)
         if modal:
-            return f"With ‘{modal[1]}’, the verb stays in its basic form for every subject: ‘{new}’."
+            return f"When saying ‘{prefix.strip()} …’, use ‘{new}’, not ‘{old}’. Say ‘{prefix}{new}’."
     if rule in DO_RULES:
         auxiliaries = re.findall(r"\b(do|does|did)\b", prefix, re.IGNORECASE)
         if auxiliaries:
             auxiliary = auxiliaries[-1].lower()
             if auxiliary == "did":
-                return f"‘Did’ already marks the past, so use ‘{new}’, not ‘{old}’."
+                return f"‘Did’ already tells us this happened in the past. Say ‘{prefix}{new}’, not ‘{prefix}{old}’."
             if auxiliary == "does":
-                return f"‘Does’ already matches the subject, so ‘{new}’ does not take ‘-s’."
-            return f"‘Do’ carries the tense, so the main verb keeps its basic form: ‘{new}’."
+                return f"After ‘does’, use ‘{new}’, not ‘{old}’. Say ‘{prefix}{new}’."
+            return f"After ‘do’, use ‘{new}’, not ‘{old}’. Say ‘{prefix}{new}’."
     if rule == "CD_NN":
         number = re.search(
             rf"(?<![\w.-])({NUMBER_WORDS}|\d+)\s+$", prefix, re.IGNORECASE
@@ -252,7 +252,7 @@ def evidence(original, proposed, raw):
     return result
 
 
-RULES = {"DID_PAST", "HE_VERB_AGR"}
+RULES = {"DID_PAST", "HE_VERB_AGR", "MD_BASEFORM", "NON3PRS_VERB", *DO_RULES}
 
 
 def _present_forms(verb):
@@ -297,11 +297,19 @@ def _select(text, raw):
             re.IGNORECASE,
         ):
             return empty
+    elif rule in {"MD_BASEFORM", "NON3PRS_VERB"}:
+        if not re.fullmatch(
+            r"(?:I|you|he|she|it|we|they) (?:can|could|should|must|might|would) (?:not )?",
+            prefix,
+            re.IGNORECASE,
+        ):
+            return empty
     else:
-        # Limit evidence to straightforward personal-pronoun did constructions.
         subject = r"(?:I|you|he|she|it|we|they)"
         if not re.fullmatch(
-            rf"(?:Did {subject} |{subject} did )(?:not )?", prefix, re.IGNORECASE
+            rf"(?:(?:Did|Do|Does) {subject} |{subject} (?:did|do|does) )(?:not )?",
+            prefix,
+            re.IGNORECASE,
         ):
             return empty
     if not isinstance(match["replacements"], list):
@@ -439,7 +447,13 @@ async def full_check(text):
                 return dict(NO_CORRECTION)
             raw = await local.check(text)
             decision = evidence(text, corrected, raw)
-            if decision["state"] == "withheld":
+            # The supplemental rule only matches a simple counted object phrase.
+            # Avoid starting Java for unrelated edits, quotes or compound sentences.
+            if decision["state"] == "withheld" and re.fullmatch(
+                rf"(?:I|you|he|she|it|we|they) \w+ (?:{NUMBER_WORDS}|[2-9]|[1-9][0-9]) \w+[.!]",
+                text,
+                re.IGNORECASE,
+            ):
                 extra = await count_evidence(text)
                 decision = evidence(
                     text, corrected, {"matches": raw["matches"] + extra["matches"]}

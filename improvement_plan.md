@@ -59,17 +59,17 @@
 
 ## Remaining work
 
-- Improve short-answer continuity and question clarification without guessing facts.
-- Review broader conversation and grammar coverage with new examples.
+- Extend question coverage only where new conversation examples justify it.
+- Improve explicit topic switching and explanations for follow-up questions.
 - General questions and complex statements intentionally have limited coverage.
   Grammar abstains on unsupported/ambiguous changes; no correctness guarantee.
 - Drafts/unsaved replies are memory-only and cannot survive browser refresh.
 - Worker locking currently supports macOS/Linux. CPU model loading can exceed
   the small conversation/quick-check budgets; fallbacks remain explicit.
 
-Next improvement: short-answer continuity and targeted question clarification,
-with regression tests for relevance and avoiding repeated closing replies. Suitable for a feature checkpoint
-once reviewed; broader quality or production-readiness claims are not established.
+Next improvement: review topic switches and longer conversations that exhaust
+prepared follow-ups. This is a feature checkpoint; broader quality or
+production-readiness claims are not established.
 
 ### Direct recording flow
 - Visible recorder automatically transcribes into the single editable message box.
@@ -87,3 +87,56 @@ once reviewed; broader quality or production-readiness claims are not establishe
 - Isolated Chrome recorder with an injected speech sample and real local Whisper
   populated the textbox, retained the transcript across history refresh ticks, and
   did not submit a turn. Physical microphone retest remains pending.
+
+### Short answers and clarification
+- One authored question-guide table in the existing conversation engine supplies
+  relevant next questions and plain-language explanations. No new dependency,
+  service, stored state, or model change.
+- Clarification and uncertain-answer help retain the underlying recent question.
+  Unknown questions, expired context, ambiguous fragments, and person/negation
+  boundaries remain conservative. Short answers do not create recall facts.
+- All 189 tests and lint/format checks pass, including 32 new regression cases.
+  A 12-turn synthetic review passed with live local model selection and authored
+  continuation/clarification responses; learner sessions were not modified.
+- Supported multi-step reading, task, and food conversations progressed without
+  repeated closing replies in this review. Uncovered questions and longer chains
+  can still reach generic fallbacks; this is not a general conversation score.
+
+### Broader review with fresh examples
+- Reviewed 25 synthetic turns across gardening, topic changes, person corrections,
+  and food orders; no learner sessions were read or changed.
+- Fixed stale hobby recall after “Not me, my brother.” A narrow explicit person
+  correction now withholds ambiguous prior name/hobby facts, without assigning
+  them to the other person. Fresh explicit declarations restore recall normally.
+- Remaining: longer conversations exhausted follow-ups and repeated closing text;
+  explicit topic switches were generic; some generated questions lacked guides.
+- Reviewed 10 grammar examples with local models and LanguageTool: quick checks
+  offered 2 corrections and withheld 8; full checks offered 4 and withheld 6 after
+  correcting the review process's Java/checker paths. No offered edit changed
+  intended meaning in this sample. Abstention does not mean grammatical correctness.
+- Four initial full checks were unavailable because this shell lacked Java and
+  the supplemental checker path; only those four were retried against the existing
+  installation. No dependencies or model choices changed.
+- All 13 newly added tests passed; changed Python files passed lint/format checks.
+  The existing full suite was deliberately not rerun. This small review does not
+  establish general accuracy. Next: topic switches and exhausted follow-ups.
+
+### Response time, feedback rules, and layout
+- Reply selection and quick feedback now overlap on one event loop using a task
+  group; failure cancels sibling work before persistence. No added threads or
+  changes to model identities, service restrictions, or per-operation deadlines.
+- Full checks skip the Java count-rule subprocess for structurally unrelated
+  sentences. In one local before/after sample, a past-tense abstention took
+  6.00 → 2.17 s and a quoted-sentence abstention 6.34 → 3.17 s. The count example
+  remained about 5.7 s. These few observations are not a performance benchmark.
+- Quick checks now support four additional verified local rule IDs for modal and
+  auxiliary-do constructions, retaining exact evidence, unique edits, and context
+  restrictions. All four new examples were offered by the real local checker.
+- Feedback suggestions open visibly with separate sentence/explanation labels;
+  abstentions remain compact, and queued/running statuses use readable labels.
+- All 13 new tests passed, including request overlap/cancellation, rule boundaries,
+  selective subprocess use, and the feedback layout. Only new tests ran; changed
+  files passed lint/format checks. Desktop/mobile Chrome checks showed no horizontal
+  overflow using synthetic content and a temporary database.
+- Conversation selection still hit its 1.4 s fallback budget in the sampled run.
+  Cold-model latency and model contention remain; no overall speed guarantee.

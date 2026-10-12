@@ -27,7 +27,8 @@ It focuses on one conversation workflow with straightforward Python modules.
   history, conservative name/hobby recall, and explicit stop/no-follow-up handling.
 - **Reviewed voice input:** record, transcribe locally with Whisper, edit, then
   explicitly send. Recordings and transcripts never submit themselves.
-- **Two grammar checks:** a quick rule-based suggestion and an optional full check
+- **Two grammar checks:** quick evidence-backed suggestions for simple agreement,
+  auxiliary-do, and modal-verb errors, plus an optional full check
   using a model proposal corroborated by local grammar rules. Unsupported edits
   are withheld; no correction found does not mean error-free English.
 - **Saved sessions:** restore completed turns after refresh. If saving fails, keep
@@ -166,6 +167,10 @@ LanguageTool must be version 6.6.
 | Full grammar check | 55 seconds |
 | Transcription | 90 seconds |
 
+Reply selection and quick feedback run concurrently on one event loop; their
+individual budgets are unchanged. Full checks start the supplemental count-rule
+process only for sentences that match its supported structure.
+
 These are software deadlines, not promised response times. Cold model/checker
 requests may exceed the small budgets. Whisper starts a fresh child process for
 each recording, allowing timeout cleanup without saving audio, at the cost of
@@ -183,11 +188,17 @@ uv run --locked ruff format --check .
 uv run --locked python tools/acceptance.py
 ```
 
-The last recorded run passed **157 automated tests**, including service failures,
+The last full-suite run passed **189 automated tests**, including service failures,
 transaction rollback, duplicate workers, interruption recovery, stale results,
 safe rendering, draft recovery, and Streamlit session restoration. Most service
 tests use mocks. Real local-service smoke checks also exercised model selection,
 grammar suggestions/abstention, and transcription.
+A later review covered 25 synthetic conversation turns and 10 grammar examples,
+with **13 new regression tests passing**; the full suite was not rerun.
+A subsequent latency/rules/layout update passed 13 additional new tests, live
+checker examples, and desktop/mobile browser layout checks. It fixed
+stale recall after an explicit person correction and confirmed remaining gaps in
+topic switching, longer exchanges, and clarification coverage.
 
 The user confirmed recording permissions, playback, transcription, editable review,
 explicit sending, and refresh restoration in the browser. This was a manual check,
@@ -199,11 +210,13 @@ accuracy or production readiness.
 
 ## Limitations
 
-- Conversation coverage is intentionally narrow. Short replies can receive generic
-  invitations or repeated closing text; topic changes need better continuity.
+- Short answers use supported recent questions about interests, packing, tasks,
+  walks, cooking, and orders. Clarification explains what answer a supported
+  question is asking for; a following answer retains that question's context.
+  Fragments do not become remembered facts. Ambiguous answers and unsupported
+  questions still fall back; longer conversations can exhaust prepared follow-ups.
 - Checked word explanations cover **lend/borrow** and **teach/learn**. Other direct
-  questions may receive an explicit fallback; clarification currently quotes the
-  prior reply rather than inventing an explanation.
+  questions and unsupported clarification requests receive an explicit fallback.
 - Grammar suggestions are conservative and can still be wrong. Full checks support
   single-line messages; unsupported or ambiguous corrections are withheld.
 - Drafts and unsaved replies are memory-only. Refresh loses them; keep the page
@@ -226,9 +239,10 @@ original repository.
 - [x] Editable recorded input and manual browser/microphone verification
 - [x] Shared grammar evidence and recoverable background checks
 - [x] Initial conversation review and same-message recall correction
-- [ ] More relevant short-answer follow-ups without repeated closing replies
-- [ ] Useful clarification of supported questions
-- [ ] Broader conversation and grammar review with new examples
+- [x] Relevant short-answer follow-ups for supported questions
+- [x] Useful clarification of supported questions
+- [x] Broader conversation and grammar review with new examples
+- [ ] Explicit topic switching and longer follow-up coverage
 
 See [improvement_plan.md](improvement_plan.md) for verification notes and next steps.
 
