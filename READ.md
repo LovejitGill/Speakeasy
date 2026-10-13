@@ -23,7 +23,10 @@ machine; sessions are stored in local SQLite.
 
 ## Quickstart
 
-# Getting started
+## Getting started
+
+<details>
+<summary>Full install and first-session walkthrough</summary>
  
 A step-by-step guide to installing and using Speakeasy. About 20–40 minutes the
 first time, mostly downloads. After that, starting a session takes under a minute.
@@ -258,7 +261,9 @@ uv run --locked python tools/acceptance.py     # needs Ollama, both models, Lang
 Most tests use mocks, so `pytest` runs without Ollama or LanguageTool.
  
 ---
- 
+
+</details>
+
 ## Troubleshooting
  
 | Symptom | Likely cause and fix |
