@@ -3,8 +3,8 @@
 import argparse
 import hashlib
 import os
+import subprocess
 import sys
-import urllib.request
 import zipfile
 from pathlib import Path
 
@@ -35,14 +35,26 @@ def main():
         folder.mkdir(exist_ok=True)
         archive = folder / "LanguageTool-6.6.zip"
         if not archive.exists():
-            with (
-                urllib.request.urlopen(
-                    "https://languagetool.org/download/LanguageTool-6.6.zip", timeout=60
-                ) as response,
-                archive.open("wb") as output,
-            ):
-                while chunk := response.read(1024 * 1024):
-                    output.write(chunk)
+            # curl handles the official download on Macs where urllib receives 403.
+            partial = archive.with_suffix(".part")
+            subprocess.run(
+                [
+                    "curl",
+                    "--fail",
+                    "--location",
+                    "--retry",
+                    "2",
+                    "--connect-timeout",
+                    "15",
+                    "--max-time",
+                    "300",
+                    "https://languagetool.org/download/LanguageTool-6.6.zip",
+                    "--output",
+                    str(partial),
+                ],
+                check=True,
+            )
+            partial.replace(archive)
         with archive.open("rb") as source:
             digest = hashlib.file_digest(source, "sha256").hexdigest()
         if digest != "53600506b399bb5ffe1e4c8dec794fd378212f14aaf38ccef9b6f89314d11631":

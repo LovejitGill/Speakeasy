@@ -203,3 +203,13 @@ production-readiness claims are not established.
   a pronoun at sentence end, and go/come home. Guards preserve “married with
   children,” “with her parents present,” and “to Home Depot.”
   19 new focused cases passed; no added dependencies or service requests.
+
+### Combined local lifecycle
+- Added tools/manage.py setup/launch, reusing downloader and service scripts.
+  uv run --locked manages Python dependencies; runtime paths persist as ignored
+  JSON. Health checks, pinned model IDs, occupied-port refusal, and owned-process
+  cleanup keep existing services intact. No new dependencies.
+- Nine focused lifecycle/setup tests passed. Real setup reused existing services;
+  a temporary-port launch loaded saved paths, served health successfully, and
+  stopped its own app while preserving both existing services. Lint passed.
+  Fresh runtime installation and new model downloads were not exercised.
