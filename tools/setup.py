@@ -14,9 +14,13 @@ sys.path.insert(0, str(ROOT))
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("component", choices=["speech", "checker"])
+    parser.add_argument("component", choices=["speech", "checker", "wordnet"])
     args = parser.parse_args()
-    if args.component == "speech":
+    if args.component == "wordnet":
+        from vocabulary import install
+
+        install()
+    elif args.component == "speech":
         from speech import MODEL_DIR, MODEL_FILES, MODEL_ID, MODEL_REVISION
 
         os.environ.setdefault("HF_HOME", str(ROOT / ".cache/huggingface"))

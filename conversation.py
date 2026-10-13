@@ -236,6 +236,16 @@ def reference(text, history, scenario):
             frozenset(word.lower() for word in match.groups()),
             "I don't have a checked explanation for that word pair.",
         )
+    meaning = re.fullmatch(
+        r"(?:what does|what do) ['\"]?([A-Za-z]+(?:[ '-][A-Za-z]+){0,3})['\"]? mean[?.!]?|"
+        r"(?:define|what is the meaning of) ['\"]?([A-Za-z]+(?:[ '-][A-Za-z]+){0,3})['\"]?[?.!]?",
+        clean,
+        re.IGNORECASE,
+    )
+    if meaning:
+        from vocabulary import lookup
+
+        return lookup(next(word for word in meaning.groups() if word))
     if CLARIFICATION.fullmatch(clean):
         guide = question_guide(history, scenario)
         if guide:

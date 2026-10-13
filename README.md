@@ -30,7 +30,9 @@ It focuses on one conversation workflow with straightforward Python modules.
 - **Reviewed voice input:** record, transcribe locally with Whisper, edit, then
   explicitly send. Recordings and transcripts never submit themselves.
 - **Two grammar checks:** quick evidence-backed suggestions for simple agreement,
-  auxiliary-do, modal-verb, and a/an errors, plus an optional full check
+  auxiliary-do, modal-verb, and a/an errors; missing helping verbs show
+  checker-supported present/past phrase choices without guessing tense, alongside
+  independent spelling suggestions. An optional full check runs
   using a model proposal corroborated by local grammar rules. Unsupported edits
   are withheld; no correction found does not mean error-free English.
 - **Saved sessions:** restore completed turns after refresh. If saving fails, keep
@@ -64,8 +66,11 @@ facts. Corrections are displayed separately and never enter conversational histo
   question is asking for; a following answer retains that question's context.
   Fragments do not become remembered facts. Ambiguous answers and unsupported
   questions still fall back; longer conversations can exhaust prepared follow-ups.
-- Checked word explanations cover **lend/borrow** and **teach/learn**. Other direct
-  questions and unsupported clarification requests receive an explicit fallback.
+- Checked word comparisons cover **lend/borrow** and **teach/learn**. Ask
+  **“What does basketball mean?”** or **“Define bank”** for up to three local
+  Open English Wordnet meanings and available examples. Definitions may be formal;
+  they do not identify the intended meaning or prove a correction is needed.
+  Other unsupported questions still receive an explicit fallback.
 - Grammar suggestions are conservative and can still be wrong. Full checks support
   single-line messages; unsupported or ambiguous corrections are withheld.
 - Drafts and unsaved replies are memory-only. Refresh loses them; keep the page
@@ -123,7 +128,8 @@ Run all remaining commands from the **Speakeasy** folder.
 uv run --locked python tools/manage.py setup
 ```
 
-Setup discovers Java/Ollama, verifies Java 21, prepares LanguageTool and Whisper,
+Setup discovers Java/Ollama, verifies Java 21, prepares LanguageTool, Whisper,
+and Open English Wordnet 2025,
 and checks/downloads the pinned Qwen models. It saves runtime paths in ignored
 `.env.local.json`; later launches load them automatically. Shell environment
 variables override saved paths. Do not `source` this JSON file.
@@ -170,6 +176,15 @@ uv run --locked python tools/manage.py launch --port 8502
 Press **Ctrl+C** to stop the app and services this launch started. Pre-existing
 services remain running. Saved conversations remain in `data/practice.sqlite3`.
 Use the same launch command next time; setup is not needed for each session.
+For an existing installation that only needs the dictionary, run:
+
+```bash
+uv run --locked python tools/setup.py wordnet
+```
+
+The pinned archive is checksum-verified and indexed locally in `.models/`.
+Launch checks that the dictionary file exists; word lookups use no network or model.
+
 Restart the launch after changing backend code; a browser refresh is insufficient.
 
 ---
@@ -285,3 +300,9 @@ its short deadline; a quick-check failure does not cancel the separate full chec
 After changing grammar or worker code, restart the Streamlit process. A browser
 refresh alone may retain a cached worker using the previous implementation.
 Previously saved feedback is not automatically recalculated.
+
+Open English Wordnet 2025 data © Open English Wordnet contributors, derived from
+Princeton WordNet, used under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+[Source and downloads](https://en-word.net/downloads). SpeakEasy converts the data
+into a SQLite index of meanings/examples; it does not reproduce the full lexical
+relationship graph or claim dictionary definitions are learner-adapted.

@@ -529,28 +529,167 @@ def spelling_suggestions(text, raw, history=(), names=()):
     return suggestions
 
 
+def missing_auxiliaries(text, raw):
+    """Show checker-backed tense choices without selecting the learner's tense."""
+    if re.search(r'["“”‘’\n\r]', text):
+        return []
+    suggestions = []
+    for match in raw["matches"]:
+        if match["rule"]["id"] != "PRP_VBG":
+            continue
+        start, end = utf16_span(text, match["offset"], match["length"])
+        old = text[start:end]
+        phrase = re.fullmatch(
+            r"(I|you|he|she|it|we|they)\s+((?:not\s+)?[a-z]+ing)", old, re.IGNORECASE
+        )
+        if not phrase or (
+            start
+            and not re.search(
+                r"[.!?]\s+$|\b(?:and|but)\s+$", text[:start], re.IGNORECASE
+            )
+        ):
+            continue
+        context = match["context"]
+        left, right = utf16_span(context["text"], context["offset"], context["length"])
+        if context["text"][left:right] != old or context["text"] not in text:
+            raise ValueError("Mismatched auxiliary evidence")
+        overlaps = False
+        for other in raw["matches"]:
+            if other is match:
+                continue
+            other_start, other_end = utf16_span(text, other["offset"], other["length"])
+            if other_start < end and start < other_end:
+                overlaps = True
+                break
+        if overlaps:
+            continue
+        subject, activity = phrase.groups()
+        present = (
+            "am"
+            if subject.lower() == "i"
+            else "is"
+            if subject.lower() in {"he", "she", "it"}
+            else "are"
+        )
+        past = "was" if subject.lower() in {"i", "he", "she", "it"} else "were"
+        supported = {item["value"] for item in match["replacements"]}
+        choices = [
+            f"{tense}: {subject} {verb} {activity}"
+            for tense, verb in (("Present", present), ("Past", past))
+            if f"{subject} {verb} {activity}" in supported
+        ]
+        if choices:
+            suggestions.append({"original": old, "choices": choices})
+        if len(suggestions) == 3:
+            break
+    return suggestions
+
+
+def possible_issues(text, raw, *, names=(), handled=()):
+    """Expose checker findings as advice, not verified sentence rewrites."""
+    findings = []
+    spans = [utf16_span(text, m["offset"], m["length"]) for m in raw["matches"]]
+    for index, (match, (start, end)) in enumerate(zip(raw["matches"], spans)):
+        rule = match["rule"]["id"]
+        old = text[start:end]
+        if rule == "MORFOLOGIK_RULE_EN_US" or rule in handled:
+            continue
+        context = match["context"]
+        left, right = utf16_span(context["text"], context["offset"], context["length"])
+        if context["text"][left:right] != old or context["text"] not in text:
+            raise ValueError("Mismatched checker evidence")
+        if old and old.casefold() in {name.casefold() for name in names}:
+            continue
+        message = (
+            match.get("message") or match.get("shortMessage") or "Review this wording."
+        )
+        if not isinstance(message, str):
+            raise TypeError("Invalid checker message")
+        overlaps = any(
+            j != index and (a < end and start < b or start == a)
+            for j, (a, b) in enumerate(spans)
+        )
+        choices = []
+        if not overlaps:
+            for replacement in match["replacements"]:
+                value = replacement["value"]
+                if not isinstance(value, str):
+                    raise TypeError("Invalid replacement")
+                if (
+                    len(value) <= 160
+                    and value != old
+                    and value not in choices
+                    and not any(ord(c) < 32 for c in value)
+                ):
+                    choices.append(value)
+                if len(choices) == 3:
+                    break
+        findings.append(
+            {
+                "original": old,
+                "position": start + 1,
+                "message": message[:500],
+                "alternatives": choices,
+                "overlap": overlaps,
+            }
+        )
+        if len(findings) == 5:
+            break
+    return findings
+
+
 async def quick_check(text, *, history=(), spelling=True, names=()):
     validate_text(text)
     phrase = common_feedback(text, names)
-    if phrase:
-        return phrase
     try:
         async with asyncio.timeout(0.3):
             raw = await local.check(text, budget=0.25)
             result = _select(text, raw)
-            result = result if result["state"] == "offered" else dict(NO_CORRECTION)
+            result = phrase or (
+                result if result["state"] == "offered" else dict(NO_CORRECTION)
+            )
+            auxiliaries = missing_auxiliaries(text, raw)
+            if auxiliaries:
+                result = {
+                    "state": "suggestions",
+                    "grammar_suggestions": auxiliaries,
+                    "message": "A helping verb appears to be missing. Choose the tense that matches what you mean; your message has not been changed.",
+                }
+            handled = {result["rule_id"]} if result.get("rule_id") else set()
+            if auxiliaries:
+                handled.add("PRP_VBG")
+            findings = possible_issues(text, raw, names=names, handled=handled)
+            if findings:
+                result["issues"] = findings
+                if result["state"] != "offered":
+                    result["state"] = "suggestions"
+                    result["message"] = (
+                        "Possible issues detected. Review the suggestions and choose wording that matches your meaning. Nothing was replaced automatically."
+                    )
+            if result["state"] == "withheld":
+                result["state"] = "no_issues" if not raw["matches"] else "reviewed"
+                result["message"] = (
+                    "No issues detected by this check. This is not proof of error-free English."
+                    if not raw["matches"]
+                    else "The checker returned findings, but none are displayed after your spelling and name preferences. This is not proof of error-free English."
+                )
             suggestions = (
                 spelling_suggestions(text, raw, history, names) if spelling else []
             )
             if suggestions:
                 result["spelling"] = suggestions
-                if result["state"] != "offered":
+                if result["state"] not in {"offered", "suggestions"}:
                     result["state"] = "spelling"
                     result["message"] = (
                         "Review these possible spelling issues. Your original message has not been changed."
                     )
             return result
     except (TimeoutError, ServiceError, ValueError, TypeError, KeyError):
+        if phrase:
+            return {
+                **phrase,
+                "review_note": "A local phrase correction is shown, but the broader LanguageTool check was unavailable.",
+            }
         return {
             "state": "unavailable",
             "message": "Quick feedback could not finish within its short time limit, or LanguageTool could not be reached or verified. Check LanguageTool; the separate full check may still finish.",

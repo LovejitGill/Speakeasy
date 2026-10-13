@@ -185,7 +185,7 @@ def run_step(command, children):
 
 
 def setup(children):
-    for component in ("checker", "speech"):
+    for component in ("checker", "speech", "wordnet"):
         run_step([sys.executable, str(ROOT / "tools/setup.py"), component], children)
     ensure_service("ollama", children)
     if not models_ok():
@@ -220,6 +220,12 @@ def main():
             setup(children)
         else:
             from speech import MODEL_DIR, MODEL_FILES
+            from vocabulary import DB_PATH as WORDNET_PATH
+
+            if not WORDNET_PATH.is_file():
+                raise ValueError(
+                    "Wordnet is missing. Run: uv run --locked python tools/setup.py wordnet"
+                )
 
             if not all((MODEL_DIR / name).is_file() for name in MODEL_FILES):
                 raise ValueError(

@@ -39,15 +39,39 @@ def feedback(result, label, turn_id):
     )
     if label == "Quick feedback" and result["state"] == "withheld":
         status = "Nice effort! No supported corrections found."
+    if label == "Quick feedback" and result["state"] in {"no_issues", "reviewed"}:
+        status = (
+            "No issues detected"
+            if result["state"] == "no_issues"
+            else "Check completed"
+        )
     names = st.session_state.get("spelling_names", set())
     spellings = [
         item
         for item in result.get("spelling", [])
         if item["word"].casefold() not in names
     ]
+    grammar_suggestions = result.get("grammar_suggestions", [])
+    if grammar_suggestions:
+        status = "Choose the intended tense"
     if spellings:
-        status = "Suggested edit and spelling" if offered else "Spelling to review"
-    with st.expander(f"{label} · {status}", expanded=offered or bool(spellings)):
+        status = (
+            "Grammar and spelling to review"
+            if grammar_suggestions
+            else "Suggested edit and spelling"
+            if offered
+            else "Spelling to review"
+        )
+    issues = result.get("issues", [])
+    if issues:
+        status = "Possible issues to review"
+    with st.expander(
+        f"{label} · {status}",
+        expanded=offered
+        or bool(spellings)
+        or bool(grammar_suggestions)
+        or bool(issues),
+    ):
         if offered:
             st.caption("SUGGESTED SENTENCE")
             st.text(result["corrected_text"])
@@ -61,6 +85,30 @@ def feedback(result, label, turn_id):
                     "No supported correction found; this is not proof of correct grammar.",
                 )
             )
+        if result.get("review_note"):
+            st.caption(result["review_note"])
+        for item in issues:
+            st.text(
+                f"Possible issue near character {item['position']}: {item['original'] or '(missing text)'}"
+            )
+            st.text(item["message"])
+            if item["overlap"]:
+                st.caption(
+                    "This overlaps another finding. Review the wording together; no replacements are recommended here."
+                )
+            elif item["alternatives"]:
+                for alternative in item["alternatives"]:
+                    st.text(
+                        "Possible replacement: " + (alternative or "(remove this text)")
+                    )
+            else:
+                st.caption(
+                    "An issue was detected, but no reliable replacement is available."
+                )
+        for item in grammar_suggestions:
+            st.text(f"In ‘{item['original']}’, add a helping verb before the activity.")
+            for choice in item["choices"]:
+                st.text(choice)
         for item in spellings:
             st.text(f"Check this word: {item['word']}")
             if item["alternatives"]:
