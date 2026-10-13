@@ -263,6 +263,9 @@ Most tests use mocks, so `pytest` runs without Ollama or LanguageTool.
 </details>
 
 ## Troubleshooting
+
+<details>
+<summary>Expand..</summary>
  
 | Symptom | Likely cause and fix |
 |---|---|
@@ -281,4 +284,6 @@ Most tests use mocks, so `pytest` runs without Ollama or LanguageTool.
  
 Other config and environment variables: see the table in the main
 [README](../README.md#configuration).
+
+</details>
  
