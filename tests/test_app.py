@@ -469,3 +469,30 @@ def test_confirm_spelling_name_is_runtime_only_and_preserves_text(page, monkeypa
     fresh.query_params["session"] = rows[0]["session_id"]
     fresh.run()
     assert "spelling_names" not in fresh.session_state
+
+
+def test_missing_auxiliary_choices_display_without_changing_message(page, monkeypatch):
+    app, path = page
+
+    async def quick(text, **kwargs):
+        return {
+            "state": "suggestions",
+            "message": "Choose the tense that matches what you mean.",
+            "grammar_suggestions": [
+                {
+                    "original": "I playing",
+                    "choices": ["Present: I am playing", "Past: I was playing"],
+                }
+            ],
+        }
+
+    monkeypatch.setattr(grammar, "quick_check", quick)
+    app.text_area(key="draft").input("I playing basketball.")
+    button(app, "Send").click().run()
+    assert not app.exception
+    assert any(t.value == "Present: I am playing" for t in app.text)
+    assert any(t.value == "Past: I was playing" for t in app.text)
+    panel = next(e for e in app.expander if "Choose the intended tense" in e.label)
+    assert panel.proto.expanded
+    rows = storage.history(storage.sessions(path)[0]["id"], path)
+    assert rows[0]["learner_text"] == "I playing basketball."

@@ -203,3 +203,31 @@ production-readiness claims are not established.
   a pronoun at sentence end, and go/come home. Guards preserve “married with
   children,” “with her parents present,” and “to Home Depot.”
   19 new focused cases passed; no added dependencies or service requests.
+
+### Combined local lifecycle
+- Added tools/manage.py setup/launch, reusing downloader and service scripts.
+  uv run --locked manages Python dependencies; runtime paths persist as ignored
+  JSON. Health checks, pinned model IDs, occupied-port refusal, and owned-process
+  cleanup keep existing services intact. No new dependencies.
+- Nine focused lifecycle/setup tests passed. Real setup reused existing services;
+  a temporary-port launch loaded saved paths, served health successfully, and
+  stopped its own app while preserving both existing services. Lint passed.
+  Fresh runtime installation and new model downloads were not exercised.
+
+### Offline vocabulary explanations
+- Added pinned Open English Wordnet 2025 (CC BY 4.0), checksum-verified setup,
+  atomic SQLite index creation, and launch asset checks. No new dependencies.
+- Explicit definition questions return up to three meanings across parts of speech,
+  matching-word examples, and attribution. No synonym-based automatic corrections.
+- Twelve focused tests passed; real archive indexed 185,129 word-sense rows.
+  Three live local lookups completed in roughly 0.5–3 ms in a small smoke check.
+  Definitions remain dictionary wording, not simplified or context-disambiguated.
+
+### Missing helping verbs
+- Quick feedback now handles LanguageTool PRP_VBG evidence across personal
+  pronouns and activities, preserving negation and showing exact present/past
+  phrase alternatives. It does not silently choose tense or rewrite messages.
+- Independent spelling flags remain visible; stale/overlapping evidence and
+  quoted phrases are withheld. No additional model or service requests.
+- 14 new focused tests and six live LanguageTool examples passed; lint passed.
+  Named subjects and other missing-verb constructions remain outside this adapter.

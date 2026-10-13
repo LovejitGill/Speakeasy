@@ -612,3 +612,81 @@ def test_small_coverage_expansion(text, expected):
 )
 def test_small_coverage_expansion_preserves_valid_or_ambiguous_text(text):
     assert grammar.common_feedback(text) is None
+
+
+@pytest.mark.parametrize(
+    "subject,activity,present,past",
+    [
+        ("I", "playing", "am", "was"),
+        ("She", "cooking", "is", "was"),
+        ("He", "running", "is", "was"),
+        ("It", "raining", "is", "was"),
+        ("We", "not going", "are", "were"),
+        ("They", "working", "are", "were"),
+        ("You", "studying", "are", "were"),
+    ],
+)
+def test_missing_auxiliary_tense_choices(monkeypatch, subject, activity, present, past):
+    from unittest.mock import AsyncMock
+
+    phrase = f"{subject} {activity}"
+    text = phrase + "."
+    raw = evidence(
+        text,
+        phrase,
+        [f"{subject} {present} {activity}", f"{subject} {past} {activity}"],
+        "PRP_VBG",
+    )
+    monkeypatch.setattr(grammar.local, "check", AsyncMock(return_value=raw))
+    result = asyncio.run(grammar.quick_check(text))
+    assert result["state"] == "suggestions"
+    assert "corrected_text" not in result
+    assert result["grammar_suggestions"][0]["choices"] == [
+        f"Present: {subject} {present} {activity}",
+        f"Past: {subject} {past} {activity}",
+    ]
+
+
+def test_missing_auxiliary_coexists_with_spelling(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    text = "I playing baskteball."
+    raw = evidence(text, "I playing", ["I am playing", "I was playing"], "PRP_VBG")
+    raw["matches"] += spelling_evidence(text, [("baskteball", ["basketball"])])[
+        "matches"
+    ]
+    monkeypatch.setattr(grammar.local, "check", AsyncMock(return_value=raw))
+    result = asyncio.run(grammar.quick_check(text))
+    assert result["state"] == "suggestions"
+    assert result["spelling"][0]["alternatives"] == ["basketball"]
+    assert len(result["grammar_suggestions"]) == 1
+
+
+@pytest.mark.parametrize(
+    "text,old,choices",
+    [
+        ('He said "I playing".', "I playing", ["I am playing"]),
+        ("I saw her playing.", "her playing", ["she is playing"]),
+        (
+            "I playing.",
+            "I playing",
+            ["I love playing", "I am swimming", "I am not playing"],
+        ),
+        ("I not going.", "I not going", ["I am going"]),
+    ],
+)
+def test_missing_auxiliary_preserves_wording(text, old, choices):
+    assert (
+        grammar.missing_auxiliaries(text, evidence(text, old, choices, "PRP_VBG")) == []
+    )
+
+
+def test_missing_auxiliary_rejects_stale_or_overlapping_evidence():
+    text = "I playing."
+    raw = evidence(text, "I playing", ["I am playing"], "PRP_VBG")
+    raw["matches"][0]["context"]["text"] = "X playing."
+    with pytest.raises(ValueError):
+        grammar.missing_auxiliaries(text, raw)
+    raw = evidence(text, "I playing", ["I am playing"], "PRP_VBG")
+    raw["matches"] += evidence(text, "playing", ["play"], "OTHER")["matches"]
+    assert grammar.missing_auxiliaries(text, raw) == []
