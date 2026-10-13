@@ -21,9 +21,7 @@ machine; sessions are stored in local SQLite.
 - **Saved sessions:** reopen past sessions from the sidebar; if saving fails, retry without regenerating the reply
 - **Background checks:** single worker, cancellable, results tied to the original turn
 
-## Quickstart
-
-## Getting started
+## Not so Quick start
 
 <details>
 <summary>Full install and first-session walkthrough</summary>
