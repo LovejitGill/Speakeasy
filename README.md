@@ -16,7 +16,7 @@ This **Speakeasy** repository is a fresh implementation informed by
 [the original Speakwell application](https://github.com/LovejitGill/Speakwell).
 It focuses on one conversation workflow with straightforward Python modules.
 
-**Jump to:** [Features/Limitations](#Features/Limitations) · [Quickstart](#quickstart) · [Configuration](#configuration) · [Roadmap](#roadmap) · [Verification](#verification) 
+**Jump to:** [Features/Limitations](#features/Limitations) · [Quickstart](#quickstart) ·  [Roadmap](#roadmap) · [Verification](#verification) 
 
 ## Features/Limitations
 
