@@ -5,8 +5,7 @@ import zipfile
 
 import pytest
 
-import conversation
-import vocabulary
+from speakeasy import conversation, vocabulary
 
 
 @pytest.fixture

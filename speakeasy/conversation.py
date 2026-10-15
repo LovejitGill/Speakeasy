@@ -3,9 +3,9 @@
 import json
 import re
 
-import local
-from context import plan_food, recall
-from errors import PracticeError, ServiceError
+from . import local
+from .context import plan_food, recall
+from .errors import PracticeError, ServiceError
 
 LEVELS = ("beginner", "intermediate", "advanced")
 SCENARIOS = ("daily activities", "introductions", "ordering food")
@@ -243,7 +243,7 @@ def reference(text, history, scenario):
         re.IGNORECASE,
     )
     if meaning:
-        from vocabulary import lookup
+        from .vocabulary import lookup
 
         return lookup(next(word for word in meaning.groups() if word))
     if CLARIFICATION.fullmatch(clean):

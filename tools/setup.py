@@ -14,17 +14,22 @@ def main():
     parser.add_argument("component", choices=["speech", "grammar", "wordnet"])
     args = parser.parse_args()
     if args.component == "wordnet":
-        from vocabulary import install
+        from speakeasy.vocabulary import install
 
         install()
     elif args.component in {"speech", "grammar"}:
         if args.component == "speech":
-            from speech import MODEL_DIR, MODEL_FILES, MODEL_ID, MODEL_REVISION
+            from speakeasy.speech import (
+                MODEL_DIR,
+                MODEL_FILES,
+                MODEL_ID,
+                MODEL_REVISION,
+            )
         else:
-            from local import GRAMMAR_MODEL_DIR as MODEL_DIR
-            from local import GRAMMAR_MODEL_FILES as MODEL_FILES
-            from local import GRAMMAR_MODEL_ID as MODEL_ID
-            from local import GRAMMAR_MODEL_REVISION as MODEL_REVISION
+            from speakeasy.local import GRAMMAR_MODEL_DIR as MODEL_DIR
+            from speakeasy.local import GRAMMAR_MODEL_FILES as MODEL_FILES
+            from speakeasy.local import GRAMMAR_MODEL_ID as MODEL_ID
+            from speakeasy.local import GRAMMAR_MODEL_REVISION as MODEL_REVISION
 
         os.environ.setdefault("HF_HOME", str(ROOT / ".cache/huggingface"))
         os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"

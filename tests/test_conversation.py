@@ -2,8 +2,8 @@ import asyncio
 
 import pytest
 
-import conversation as flow
-from errors import PracticeError, ServiceError
+from speakeasy import conversation as flow
+from speakeasy.errors import PracticeError, ServiceError
 
 
 def run(text, **kwargs):

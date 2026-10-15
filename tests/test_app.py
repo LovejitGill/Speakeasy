@@ -4,11 +4,8 @@ from unittest.mock import Mock
 import pytest
 from streamlit.testing.v1 import AppTest
 
-import conversation
-import grammar
-import storage
-import worker
-from errors import StorageError
+from speakeasy import conversation, grammar, storage, worker
+from speakeasy.errors import StorageError
 
 
 @pytest.fixture
@@ -78,7 +75,7 @@ def mock_recording(monkeypatch, transcript="He work."):
 
     import streamlit as st
 
-    import speech
+    from speakeasy import speech
 
     recordings = {"audio_0": b"audio"}
     monkeypatch.setattr(
@@ -151,7 +148,7 @@ def test_learner_content_not_rendered_as_html_or_markdown(page):
 
 
 def test_failed_transcription_preserves_draft_and_retries_explicitly(page, monkeypatch):
-    import speech
+    from speakeasy import speech
 
     app, _path = page
     app.text_area(key="draft").input("Typed draft").run()

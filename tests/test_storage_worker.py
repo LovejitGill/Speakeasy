@@ -4,11 +4,9 @@ import time
 
 import pytest
 
-import grammar
-import storage
-import tutor
-from errors import StorageError
-from worker import Worker
+from speakeasy import grammar, storage, tutor
+from speakeasy.errors import StorageError
+from speakeasy.worker import Worker
 
 
 @pytest.fixture
@@ -165,7 +163,7 @@ def test_killed_process_recovery(db):
     storage.save_turn(turn(session), path=path)
     code = """
 import asyncio, sys, time
-from worker import Worker
+from speakeasy.worker import Worker
 async def check(text):
     await asyncio.sleep(30)
     return {"state": "withheld"}

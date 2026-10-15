@@ -2,8 +2,8 @@ import asyncio
 
 import pytest
 
-import grammar
-from errors import PracticeError, ServiceError
+from speakeasy import grammar
+from speakeasy.errors import PracticeError, ServiceError
 
 
 @pytest.mark.parametrize(

@@ -7,12 +7,9 @@ from pathlib import Path
 
 import streamlit as st
 
-import conversation
-import speech
-import storage
-import tutor
-from errors import user_message
-from worker import Worker
+from speakeasy import conversation, speech, storage, tutor
+from speakeasy.errors import user_message
+from speakeasy.worker import Worker
 
 STYLE_PATH = Path(__file__).parent / "assets" / "style.css"
 

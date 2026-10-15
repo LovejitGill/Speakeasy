@@ -6,9 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import conversation
-import grammar
-import local
+from speakeasy import conversation, grammar, local
 
 
 async def main():

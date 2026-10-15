@@ -6,8 +6,7 @@ import os
 
 import pytest
 
-import grammar
-import local
+from speakeasy import grammar, local
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("SPEAKWELL_REAL_T5_TEST") != "1",

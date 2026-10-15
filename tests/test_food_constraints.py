@@ -2,7 +2,7 @@
 
 import pytest
 
-from context import plan_food
+from speakeasy.context import plan_food
 
 
 def question_text(result):

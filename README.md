@@ -4,21 +4,25 @@
 ![Local inference](https://img.shields.io/badge/Inference-local-287D3C)
 [![MIT License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**A Multilingual AI Language Tutor
-Speakeasy is a proposed voice-based language-learning application designed to help users practice multiple languages with a virtual AI tutor. Learners will speak into a microphone, hear the tutor respond, and receive targeted feedback on grammar, vocabulary, coherence, and pronunciation.**
+**AI Language Tutor**
 
+MVP: (Current capabilities) The current proof of concept supports English practice through typed messages or reviewed speech transcripts. It provides prepared tutor responses, limited quick grammar feedback, optional full grammar suggestions, local vocabulary lookup, and saved sessions. It does not yet support real-time conversation, multilingual practice, spoken tutor replies, or pronunciation feedback.
 Speakeasy helps learners practise English through typed messages or completed
 recordings. Review the transcript before sending, receive a conversational reply,
 and explore supported grammar suggestions. Models run on your computer; completed
 conversations are stored locally in SQLite.
 
-This **Speakeasy** repository is a fresh implementation informed by
-[the original Speakwell application](https://github.com/LovejitGill/Speakwell).
-It focuses on one conversation workflow with straightforward Python modules.
+<details>
+<summary>Goals </summary>
+  
+Multilingual AI Language Tutor
+Speakeasy is a proposed voice-based language-learning application designed to help users practice language(s) with a virtual AI tutor to improve grammar and vocabulary, and develop speaking skills through personalized feedback, with a focus on real-time spoken interaction. Learners will speak into a mic, hear the tutor respond, and receive targeted feedback on grammar, vocabulary, coherence, and pronunciation.
 
-**Jump to:** [Features/Limitations](#featureslimitations) · [Quickstart](#not-so-quick-start) ·  [Roadmap](#roadmap) · [Verification](#verification)
+  </details>
 
-## Features/Limitations
+**Jump to:** [Features/Limitations](#featureslimitations) · [Quickstart](#not-so-quick-start) · [Roadmap](#roadmap)
+
+## Current Features/Limitations
 
 <details>
 <summary>Expand Features</summary>
@@ -42,11 +46,16 @@ It focuses on one conversation workflow with straightforward Python modules.
 |---|---|
 | `app.py` | Page controls, recording, editable drafts, and feedback display |
 | `assets/style.css` / `.streamlit/config.toml` | Responsive layout styling and the app-wide color theme |
-| `tutor.py` | Coordinate a reply, quick feedback, and saving |
-| `conversation.py` / `context.py` | Select follow-ups and handle supported facts, people, and food constraints |
-| `grammar.py` | Quick rules, full checks, ERRANT edits, and local explanations |
-| `local.py` / `speech.py` | Bounded local HTTP requests, offline T5 correction and transcription |
-| `storage.py` / `worker.py` | Direct SQLite operations and recoverable grammar jobs |
+| `speakeasy/tutor.py` | Coordinate a reply, quick feedback, and saving |
+| `speakeasy/conversation.py` / `speakeasy/context.py` | Select follow-ups and handle supported facts, people, and food constraints |
+| `speakeasy/grammar.py` | Quick rules, full checks, ERRANT edits, and local explanations |
+| `speakeasy/local.py` / `speakeasy/speech.py` | Bounded local HTTP requests, offline T5 correction and transcription |
+| `speakeasy/storage.py` / `speakeasy/worker.py` | Direct SQLite operations and recoverable grammar jobs |
+| `speakeasy/vocabulary.py` / `speakeasy/errors.py` | Local dictionary lookup and safe application errors |
+
+Application modules live in the `speakeasy` package; `app.py` remains the
+Streamlit entry point. Run commands from the repository root. Model files,
+rules, assets, and saved history remain in their existing root directories.
 
 The model selects among prepared follow-ups rather than writing unrestricted
 conversational prose. This limits invented facts but also limits flexibility.
@@ -64,6 +73,9 @@ facts. Corrections are displayed separately and never enter conversational histo
   question is asking for; a following answer retains that question's context.
   Fragments do not become remembered facts. Ambiguous answers and unsupported
   questions still fall back; longer conversations can exhaust prepared follow-ups.
+  One known routing issue: “What do you mean?” can be treated as a WordNet lookup
+  for “you” instead of a request to explain the tutor's question. This also affects
+  clarification follow-ups that depend on that reply.
 - Checked word comparisons cover **lend/borrow** and **teach/learn**. Ask
   **“What does basketball mean?”** or **“Define bank”** for up to three local
   Open English Wordnet meanings and available examples. Definitions may be formal;
@@ -247,9 +259,23 @@ Allow microphone access when prompted. Use **Record again** or **Retry
 transcription** as needed. Practice uses prepared follow-ups, not unrestricted
 model-generated conversation; longer exchanges may run out of questions.
 
+### Verify the app on your device
+
+- Record a short message with your microphone. Confirm the transcript appears
+  for review and is not sent until you click **Send**.
+- Try a sentence with a possible grammar issue. Review the quick feedback and,
+  if enabled, the full suggestion. Check that the original message remains
+  unchanged and treat the correction as a suggestion.
+- Test a follow-up conversation and open a saved session to confirm your turns
+  are restored.
+
+These hands-on checks help you assess microphone behavior and correction
+usefulness on your device. Automated tests do not establish general correction
+accuracy or physical microphone behavior.
+
 ---
 
-## Part 5: Troubleshooting and verification
+## Part 5: Troubleshooting
 
 - **Optional Ollama runtime missing:** set the executable path in Part 2 and rerun setup with `--with-ollama`.
   Do not add a backslash before `@` in Homebrew paths.
@@ -283,35 +309,20 @@ Run only the troubleshooting command relevant to your error. To verify imports:
 uv run --locked python -c "import streamlit, faster_whisper, httpx, numpy, errant, spacy; spacy.load('en_core_web_sm'); print('Imports OK')"
 ```
 
-For focused setup/launch tests:
+### Try it on your device
 
-```bash
-uv run --locked pytest tests/test_manage.py -q
-```
+- Type a message and send it. Confirm that a tutor reply and quick feedback appear.
+- Try **Full grammar check**. Review any suggestion and confirm your original
+  message remains unchanged. Suggestions may be incorrect or miss errors.
+- Record a short message. Confirm the transcript appears for review, edit it,
+  then send it yourself.
+- Open a saved session, then refresh the page and check that completed turns
+  are still available.
 
-See **Verification** below for the test suite and real-service smoke command.
-The smoke command needs Ollama, the pinned Qwen 1.7B model, and cached T5/spaCy
-assets. Runtime model loading does not download weights.
+These steps let you check the app’s behavior on your device, including
+microphone access and transcription.
 
 </details>
-
-## Verification
-
-```bash
-uv run --locked pytest -q
-uv run --locked ruff check .
-uv run --locked ruff format --check .
-# With Ollama, both models, and cached T5/spaCy models available:
-uv run --locked python tools/acceptance.py
-```
-
-The migration audit on 2026-10-14 ran the full suite (**320 passed, 8 failed,
-11 skipped**), focused worker/UI/grammar checks, real CPU T5/ERRANT cases, the
-local-service acceptance script, and an AppTest workflow through persistence,
-WordNet, and Whisper using a WAV fixture. The eight failures are conversation
-clarification tests because dictionary lookup runs before clarification routing.
-These checks do not establish general correction accuracy or physical microphone
-behavior.
 
 ## Roadmap
 
@@ -323,6 +334,14 @@ behavior.
 - [x] Useful clarification of supported questions
 - [x] Broader conversation and grammar review with new examples
 - [ ] Explicit topic switching and longer follow-up coverage
+- [ ] Add selectable practice languages, with matching tutor conversation,
+  transcription, grammar feedback, and vocabulary support.
+- [ ] Support real-time spoken conversation, including responsive turn-taking
+  and spoken tutor replies.
+- [ ] Give learners actionable speech feedback, such as pronunciation,
+  intelligibility, and pacing.
+- [ ] Personalize conversation topics and feedback to each learner’s goals,
+  proficiency, and progress.
 
 ## License
 

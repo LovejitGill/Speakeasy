@@ -3,8 +3,8 @@ import asyncio
 import httpx
 import pytest
 
-import local
-from errors import ServiceError, user_message
+from speakeasy import local
+from speakeasy.errors import ServiceError, user_message
 
 
 def test_no_remote_requests():

@@ -6,9 +6,9 @@ import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
-from errors import StorageError
+from .errors import StorageError
 
-DEFAULT_PATH = Path(__file__).parent / "data" / "practice.sqlite3"
+DEFAULT_PATH = Path(__file__).resolve().parents[1] / "data" / "practice.sqlite3"
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
  id TEXT PRIMARY KEY, level TEXT NOT NULL, scenario TEXT NOT NULL,
@@ -54,7 +54,7 @@ def initialize(path=DEFAULT_PATH):
 
 
 def create_session(level, scenario, path=DEFAULT_PATH):
-    from conversation import validate_settings
+    from .conversation import validate_settings
 
     validate_settings(level, scenario)
     session_id = str(uuid.uuid4())
