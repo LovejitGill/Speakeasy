@@ -53,16 +53,6 @@ Speakeasy is a proposed voice-based language-learning application designed to he
 | `speakeasy/storage.py` / `speakeasy/worker.py` | Direct SQLite operations and recoverable grammar jobs |
 | `speakeasy/vocabulary.py` / `speakeasy/errors.py` | Local dictionary lookup and safe application errors |
 
-Application modules live in the `speakeasy` package; `app.py` remains the
-Streamlit entry point. Run commands from the repository root. Model files,
-rules, assets, and saved history remain in their existing root directories.
-
-The model selects among prepared follow-ups rather than writing unrestricted
-conversational prose. This limits invented facts but also limits flexibility.
-Context includes at most **four complete learner/tutor exchanges and 3,000
-characters**. Supported declarations in the current message can update recalled
-facts. Corrections are displayed separately and never enter conversational history.
-
   </details>
 
 <details>
