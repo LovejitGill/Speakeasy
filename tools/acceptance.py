@@ -15,11 +15,11 @@ async def main():
     failures = 0
     try:
         tags = await local.request(local.OLLAMA + "/api/tags")
-        for model, digest in local.MODELS.items():
-            assert any(
-                m["name"] == model and m["digest"] == digest for m in tags["models"]
-            )
-        print("PASS: both Ollama model identities match.")
+        assert any(
+            m["name"] == "qwen3:1.7b" and m["digest"] == local.MODELS["qwen3:1.7b"]
+            for m in tags["models"]
+        )
+        print("PASS: conversation Ollama model identity matches.")
         await local.generate(
             "qwen3:1.7b",
             [{"role": "user", "content": "Return integer zero."}],
@@ -34,12 +34,7 @@ async def main():
     reply = await conversation.respond("I enjoy reading.")
     print("Conversation path:", reply["path"])
     failures += reply["path"] != "model_selected"
-    try:
-        await local.check("She go to work.")
-        print("PASS: checker version and response verified; warm-up complete.")
-    except Exception:  # noqa: BLE001 -- safe diagnostic boundary
-        print("BLOCKED: checker service is unavailable or unsupported.")
-    quick = await grammar.quick_check("She go to work.")
+    quick = await grammar.quick_check("I enjoy to swim.")
     print("Quick correction:", quick["state"])
     failures += quick["state"] != "offered"
     full_results = []
@@ -48,13 +43,6 @@ async def main():
         full_results.append(full["state"])
         print("Full grammar:", full["state"])
     failures += "offered" not in full_results or "unavailable" in full_results
-    try:
-        count = await grammar.count_evidence("I packed seven bottle.")
-        assert count["matches"]
-        print("PASS: supplemental count rule.")
-    except Exception:  # noqa: BLE001 -- safe diagnostic boundary
-        print("BLOCKED: supplemental count rule.")
-        failures += 1
     return int(bool(failures))
 
 

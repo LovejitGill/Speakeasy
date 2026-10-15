@@ -4,7 +4,6 @@ import argparse
 import asyncio
 import json
 import os
-import re
 import shutil
 import signal
 import socket
@@ -21,68 +20,28 @@ from errors import ServiceError
 
 CONFIG = ROOT / ".env.local.json"
 KEYS = (
-    "SPEAKWELL_JAVA",
     "SPEAKWELL_OLLAMA",
-    "SPEAKWELL_LT_DIR",
     "SPEAKWELL_SPEECH_MODEL",
 )
+OLD_KEYS = ("SPEAKWELL_JAVA", "SPEAKWELL_LT_DIR")
 
 
 def load_paths():
     if CONFIG.exists():
         values = json.loads(CONFIG.read_text())
         if not isinstance(values, dict) or any(
-            key not in KEYS or not isinstance(value, str)
+            key not in (*KEYS, *OLD_KEYS) or not isinstance(value, str)
             for key, value in values.items()
         ):
             raise ValueError(
                 "Invalid .env.local.json; expected supported executable/model paths."
             )
-        for key, value in values.items():
-            os.environ.setdefault(key, value)
+        for key in KEYS:
+            if key in values:
+                os.environ.setdefault(key, values[key])
 
 
 def discover():
-    java_home = os.environ.get("JAVA_HOME", "")
-    java_candidates = [
-        os.environ.get("SPEAKWELL_JAVA"),
-        str(Path(java_home) / "bin/java") if java_home else None,
-        str(ROOT / ".tools/java"),
-        "/opt/homebrew/opt/openjdk@21/bin/java",
-        "/usr/local/opt/openjdk@21/bin/java",
-        shutil.which("java"),
-    ]
-    if not os.environ.get("SPEAKWELL_JAVA") and Path("/usr/libexec/java_home").exists():
-        found = subprocess.run(
-            ["/usr/libexec/java_home", "-v", "21"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if found.returncode == 0:
-            java_candidates.insert(1, str(Path(found.stdout.strip()) / "bin/java"))
-    if os.environ.get("SPEAKWELL_JAVA"):
-        java_candidates = java_candidates[:1]
-    for candidate in filter(None, java_candidates):
-        if not Path(candidate).is_file():
-            continue
-        result = subprocess.run(
-            [candidate, "-version"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode == 0 and re.search(
-            r'version "21(?:\.|\")', result.stdout + result.stderr
-        ):
-            os.environ["SPEAKWELL_JAVA"] = str(Path(candidate).resolve())
-            break
-    else:
-        raise ValueError(
-            "Java 21 not found. Set SPEAKWELL_JAVA to its bin/java executable."
-        )
     ollama = os.environ.get("SPEAKWELL_OLLAMA") or shutil.which("ollama")
     if (
         not ollama
@@ -106,7 +65,7 @@ async def check_service(name):
         if not isinstance(tags.get("models"), list):
             raise ValueError("Invalid Ollama response")
         return tags
-    return await local.check("This is a local service check.")
+    raise ValueError("Unsupported service")
 
 
 def healthy(name):
@@ -117,7 +76,9 @@ def healthy(name):
 
 
 def ensure_service(name, children):
-    port = 11434 if name == "ollama" else 8081
+    if name != "ollama":
+        raise ValueError("Unsupported service")
+    port = 11434
     if occupied(port):
         if healthy(name) is None:
             raise ValueError(
@@ -127,10 +88,7 @@ def ensure_service(name, children):
         return
     log_dir = ROOT / ".tools/logs"
     log_dir.mkdir(parents=True, exist_ok=True)
-    script = "ollama.sh" if name == "ollama" else "checker.sh"
-    command = ["bash", str(ROOT / "tools" / script)]
-    if name == "ollama":
-        command.append("serve")
+    command = ["bash", str(ROOT / "tools/ollama.sh"), "serve"]
     with (log_dir / f"{name}.log").open("ab") as log:
         child = subprocess.Popen(
             command, cwd=ROOT, stdout=log, stderr=log, start_new_session=True
@@ -167,12 +125,10 @@ def cleanup(children):
 
 def models_ok():
     tags = healthy("ollama")
-    return tags is not None and all(
-        any(
-            item.get("name") == name and item.get("digest") == digest
-            for item in tags["models"]
-        )
-        for name, digest in local.MODELS.items()
+    return tags is not None and any(
+        item.get("name") == "qwen3:1.7b"
+        and item.get("digest") == local.MODELS["qwen3:1.7b"]
+        for item in tags["models"]
     )
 
 
@@ -184,19 +140,25 @@ def run_step(command, children):
         raise subprocess.CalledProcessError(result, command)
 
 
-def setup(children):
-    for component in ("checker", "speech", "wordnet"):
+def setup(children, *, with_ollama=False):
+    for component in ("speech", "grammar", "wordnet"):
         run_step([sys.executable, str(ROOT / "tools/setup.py"), component], children)
-    ensure_service("ollama", children)
-    if not models_ok():
-        for name in local.MODELS:
-            run_step(["bash", str(ROOT / "tools/ollama.sh"), "pull", name], children)
-    if not models_ok():
-        raise ValueError(
-            "Downloaded model identities differ from the app's pinned models. Setup is incomplete."
-        )
-    ensure_service("checker", children)
-    values = {key: os.environ[key] for key in KEYS if key in os.environ}
+    if with_ollama:
+        discover()
+        ensure_service("ollama", children)
+        if not models_ok():
+            run_step(
+                ["bash", str(ROOT / "tools/ollama.sh"), "pull", "qwen3:1.7b"], children
+            )
+        if not models_ok():
+            raise ValueError(
+                "Downloaded conversation model identity differs from the pinned model. Setup is incomplete."
+            )
+    values = {
+        key: os.environ[key]
+        for key in KEYS
+        if key in os.environ and (with_ollama or key != "SPEAKWELL_OLLAMA")
+    }
     temporary = CONFIG.with_suffix(".tmp")
     temporary.write_text(json.dumps(values, indent=2) + "\n")
     temporary.chmod(0o600)
@@ -208,6 +170,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("setup", "launch"))
     parser.add_argument("--port", type=int, default=8501)
+    parser.add_argument(
+        "--with-ollama",
+        action="store_true",
+        help="manage the optional Qwen conversation model",
+    )
     args = parser.parse_args()
     children = []
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
@@ -215,9 +182,8 @@ def main():
         if not 1 <= args.port <= 65535:
             raise ValueError("Port must be between 1 and 65535.")
         load_paths()
-        discover()
         if args.command == "setup":
-            setup(children)
+            setup(children, with_ollama=args.with_ollama)
         else:
             from speech import MODEL_DIR, MODEL_FILES
             from vocabulary import DB_PATH as WORDNET_PATH
@@ -235,12 +201,13 @@ def main():
                 raise ValueError(
                     f"App port {args.port} is occupied. Choose --port with a free port."
                 )
-            ensure_service("ollama", children)
-            if not models_ok():
-                raise ValueError(
-                    "Required model identities do not match. Run setup first."
-                )
-            ensure_service("checker", children)
+            if args.with_ollama:
+                discover()
+                ensure_service("ollama", children)
+                if not models_ok():
+                    raise ValueError(
+                        "Conversation model identity does not match. Run setup --with-ollama first."
+                    )
             child = subprocess.Popen(
                 [
                     sys.executable,

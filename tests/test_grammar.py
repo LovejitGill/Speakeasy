@@ -3,74 +3,7 @@ import asyncio
 import pytest
 
 import grammar
-from errors import ServiceError
-
-
-def evidence(text, old=None, choices=(), rule="DID_PAST"):
-    matches = []
-    if old is not None:
-        offset = len(text[: text.index(old)].encode("utf-16-le")) // 2
-        length = len(old.encode("utf-16-le")) // 2
-        matches.append(
-            {
-                "offset": offset,
-                "length": length,
-                "context": {"text": text, "offset": offset, "length": length},
-                "rule": {"id": rule},
-                "replacements": [{"value": value} for value in choices],
-            }
-        )
-    return {
-        "software": {"version": "6.6"},
-        "warnings": {"incompleteResults": False},
-        "matches": matches,
-    }
-
-
-def test_quick_exact_evidence():
-    text = "Did you visited the castle?"
-    result = grammar._select(text, evidence(text, "visited", ["visit"]))
-    assert result["state"] == "offered"
-    assert result["corrected_text"] == "Did you visit the castle?"
-    assert "already tells us this happened in the past" in result["explanation"]
-
-
-def test_agreement_filters_past():
-    text = "She go to work."
-    result = grammar._select(
-        text, evidence(text, "go", ["goes", "went"], "HE_VERB_AGR")
-    )
-    assert result["corrected_text"] == "She goes to work."
-
-
-@pytest.mark.parametrize(
-    "text,old,new,rule",
-    [
-        ("She go yesterday.", "go", ["goes"], "HE_VERB_AGR"),
-        ("They go to work.", "go", ["goes"], "HE_VERB_AGR"),
-        ("She go and return.", "go", ["goes"], "HE_VERB_AGR"),
-        ("Did you visited?", "visited", ["visit", "see"], "DID_PAST"),
-        ("I visited.", "visited", ["visit"], "DID_PAST"),
-        ("He work.", "work", ["works"], "UNKNOWN"),
-    ],
-)
-def test_unsupported_quick_withheld(text, old, new, rule):
-    assert (
-        grammar._select(text, evidence(text, old, new, rule))["state"]
-        == "no_supported_correction"
-    )
-
-
-def test_unicode_offsets_and_bad_context():
-    text = "😀 Did you visited?"
-    raw = evidence(text, "visited", ["visit"])
-    decision = grammar.evidence(text, "😀 Did you visit?", raw)
-    assert decision["state"] == "provisional"
-    raw["matches"][0]["context"]["text"] = "Different text"
-    with pytest.raises(ValueError):
-        grammar.evidence(text, "😀 Did you visit?", raw)
-    with pytest.raises((ValueError, UnicodeError)):
-        grammar.utf16_span(text, 1, 1)
+from errors import PracticeError, ServiceError
 
 
 @pytest.mark.parametrize(
@@ -88,391 +21,368 @@ def test_invalid_model_output(monkeypatch, proposal):
     async def generate(*args, **kwargs):
         return proposal
 
-    monkeypatch.setattr(grammar.local, "generate", generate)
+    monkeypatch.setattr(grammar.local, "correct", generate)
     assert asyncio.run(grammar.full_check("He work."))["state"] == "unavailable"
 
 
-def test_full_check_requires_exact_agreement(monkeypatch):
+def test_full_check_includes_descriptive_errant_edits(monkeypatch):
+    from unittest.mock import AsyncMock
+
     async def generate(*args, **kwargs):
-        return {"corrected_text": "He works."}
+        return {"corrected_text": "He works every day."}
 
-    async def check(*args, **kwargs):
-        return evidence("He work.", "work", ["works"], "HE_VERB_AGR")
+    monkeypatch.setattr(grammar.local, "correct", generate)
+    for name in ("generate", "request"):
+        monkeypatch.setattr(
+            grammar.local,
+            name,
+            AsyncMock(side_effect=AssertionError("Unexpected service")),
+        )
+    result = asyncio.run(grammar.full_check("He work every day."))
+    assert result["state"] == "offered"
+    assert result["rule_id"] is None
+    assert "do not verify" in result["explanation"]
+    assert result["proposal_provenance"] == "AI-generated"
+    assert result["edits"] == [
+        {
+            "operation": "replacement",
+            "before": "work",
+            "after": "works",
+            "category": "R:VERB:SVA",
+            "explanation": grammar.explanation_for_category("R:VERB:SVA")[
+                "explanation"
+            ],
+            "provenance": "generic local",
+            "original_span": {"start": 3, "end": 7},
+            "corrected_span": {"start": 3, "end": 8},
+        }
+    ]
 
-    monkeypatch.setattr(grammar.local, "generate", generate)
-    monkeypatch.setattr(grammar.local, "check", check)
-    assert asyncio.run(grammar.full_check("He work."))["state"] == "offered"
 
-    async def unsupported(*args, **kwargs):
-        return {"corrected_text": "He worked yesterday."}
+@pytest.mark.parametrize(
+    "category,phrase",
+    [
+        ("R:VERB:TENSE", "verb-tense"),
+        ("R:VERB:SVA", "subject–verb agreement"),
+        ("M:DET", "determiner change"),
+        ("R:NOUN:NUM", "noun-number"),
+        ("R:VERB:FORM", "verb-form"),
+        ("R:SPELL", "spelling change"),
+        ("R:PREP", "preposition change"),
+    ],
+)
+def test_errant_category_explanation_lookup(category, phrase):
+    result = grammar.explanation_for_category(category)
+    assert phrase in result["explanation"]
+    assert result["provenance"] == "generic local"
 
-    async def count(*args):
-        return {"matches": []}
 
-    monkeypatch.setattr(grammar.local, "generate", unsupported)
-    monkeypatch.setattr(grammar, "count_evidence", count)
-    assert asyncio.run(grammar.full_check("He work."))["state"] == "withheld"
+def test_errant_unknown_category_has_neutral_fallback():
+    result = grammar.explanation_for_category("R:UNRECOGNIZED")
+    assert result["explanation"] == grammar._UNKNOWN_CATEGORY_EXPLANATION
+    assert result["provenance"] == "generic local"
+
+
+def test_errant_edit_adapter_maps_token_spans_to_source_offsets():
+    from types import SimpleNamespace
+
+    original = "I go home."
+    corrected = "I went home."
+    orig_doc = [
+        SimpleNamespace(text="I", idx=0),
+        SimpleNamespace(text="go", idx=2),
+        SimpleNamespace(text="home", idx=5),
+        SimpleNamespace(text=".", idx=9),
+    ]
+    cor_doc = [
+        SimpleNamespace(text="I", idx=0),
+        SimpleNamespace(text="went", idx=2),
+        SimpleNamespace(text="home", idx=7),
+        SimpleNamespace(text=".", idx=11),
+    ]
+    edit = SimpleNamespace(
+        o_start=1,
+        o_end=2,
+        o_str="go",
+        c_start=1,
+        c_end=2,
+        c_str="went",
+        type="R:VERB:TENSE",
+    )
+    result = grammar._edit_result(edit, original, corrected, orig_doc, cor_doc)
+    assert result == {
+        "operation": "replacement",
+        "before": "go",
+        "after": "went",
+        "category": "R:VERB:TENSE",
+        "explanation": grammar.explanation_for_category("R:VERB:TENSE")["explanation"],
+        "provenance": "generic local",
+        "original_span": {"start": 2, "end": 4},
+        "corrected_span": {"start": 2, "end": 6},
+    }
+
+
+@pytest.mark.parametrize(
+    "original,corrected,operation,category,before,after",
+    [
+        (
+            "I go to school yesterday.",
+            "I went to school yesterday.",
+            "replacement",
+            "R:VERB:TENSE",
+            "go",
+            "went",
+        ),
+        (
+            "She work every day.",
+            "She works every day.",
+            "replacement",
+            "R:VERB:SVA",
+            "work",
+            "works",
+        ),
+        (
+            "I like the blue book.",
+            "I like book.",
+            "deletion",
+            "U:OTHER",
+            "the blue",
+            "",
+        ),
+        (
+            "I eat apple.",
+            "I eat an apple.",
+            "insertion",
+            "M:DET",
+            "",
+            "an",
+        ),
+        (
+            "I bought three apple yesterday.",
+            "I bought three apples yesterday.",
+            "replacement",
+            "R:NOUN:NUM",
+            "apple",
+            "apples",
+        ),
+        (
+            "I like swim every morning.",
+            "I like swimming every morning.",
+            "replacement",
+            "R:VERB:FORM",
+            "swim",
+            "swimming",
+        ),
+        (
+            "I recieve letters.",
+            "I receive letters.",
+            "replacement",
+            "R:SPELL",
+            "recieve",
+            "receive",
+        ),
+    ],
+)
+def test_full_check_errant_edit_categories(
+    monkeypatch, original, corrected, operation, category, before, after
+):
+    async def generate(*args, **kwargs):
+        return {"corrected_text": corrected}
+
+    monkeypatch.setattr(grammar.local, "correct", generate)
+    result = asyncio.run(grammar.full_check(original))
+    assert result["state"] == "offered"
+    assert len(result["edits"]) == 1
+    edit = result["edits"][0]
+    assert (edit["operation"], edit["category"], edit["before"], edit["after"]) == (
+        operation,
+        category,
+        before,
+        after,
+    )
+    original_span = edit["original_span"]
+    corrected_span = edit["corrected_span"]
+    assert original[original_span["start"] : original_span["end"]] == before
+    assert corrected[corrected_span["start"] : corrected_span["end"]] == after
+
+
+def test_full_check_errant_multiple_edits(monkeypatch):
+    original = "I go and I play soccer."
+    corrected = "I went and I played soccer."
+
+    async def generate(*args, **kwargs):
+        return {"corrected_text": corrected}
+
+    monkeypatch.setattr(grammar.local, "correct", generate)
+    result = asyncio.run(grammar.full_check(original))
+    assert result["state"] == "offered"
+    assert len(result["edits"]) == 2
+    assert [edit["before"] for edit in result["edits"]] == ["go", "play"]
+    assert [edit["after"] for edit in result["edits"]] == ["went", "played"]
+    for edit in result["edits"]:
+        original_span = edit["original_span"]
+        corrected_span = edit["corrected_span"]
+        assert original[original_span["start"] : original_span["end"]] == edit["before"]
+        assert (
+            corrected[corrected_span["start"] : corrected_span["end"]] == edit["after"]
+        )
+
+
+@pytest.mark.parametrize(
+    "original,corrected,before,after,category",
+    [
+        (
+            "I packed seven bottle.",
+            "I packed seven bottles.",
+            "bottle",
+            "bottles",
+            "R:NOUN:NUM",
+        ),
+        ("I  go yesterday.", "I  went yesterday.", "go", "went", "R:VERB:TENSE"),
+        (
+            "😀  I\tgo yesterday.",
+            "😀  I\twent yesterday.",
+            "go",
+            "went",
+            "R:VERB:TENSE",
+        ),
+        ("She don't work.", "She doesn't work.", "do", "does", "R:VERB:SVA"),
+    ],
+)
+def test_errant_raw_text_keeps_exact_spans_and_separate_punctuation(
+    original, corrected, before, after, category
+):
+    edits = grammar._annotate_edits(original, corrected)
+    assert len(edits) == 1
+    edit = edits[0]
+    assert (edit["before"], edit["after"], edit["category"]) == (
+        before,
+        after,
+        category,
+    )
+    assert edit["original_span"] == {
+        "start": original.index(before),
+        "end": original.index(before) + len(before),
+    }
+    assert edit["corrected_span"] == {
+        "start": corrected.index(after),
+        "end": corrected.index(after) + len(after),
+    }
+
+
+def test_full_check_unchanged_sentence_has_no_edits(monkeypatch):
+    async def generate(*args, **kwargs):
+        return {"corrected_text": "I go to school."}
+
+    monkeypatch.setattr(grammar.local, "correct", generate)
+    result = asyncio.run(grammar.full_check("I go to school."))
+    assert result["state"] == "withheld"
+    assert "does not mean" in result["message"]
+    assert "edits" not in result
+
+
+@pytest.mark.parametrize("text", ["", "   ", "x" * 1001])
+@pytest.mark.parametrize("check", [grammar.quick_check, grammar.full_check])
+def test_grammar_rejects_empty_or_oversize_before_inference(monkeypatch, text, check):
+    async def unexpected(*args, **kwargs):
+        raise AssertionError("invalid input started inference")
+
+    monkeypatch.setattr(grammar.local, "correct", unexpected)
+    with pytest.raises(PracticeError):
+        asyncio.run(check(text))
 
 
 def test_no_proposal_is_not_correctness(monkeypatch):
     async def generate(*args, **kwargs):
         return {"corrected_text": "He work."}
 
-    monkeypatch.setattr(grammar.local, "generate", generate)
+    monkeypatch.setattr(grammar.local, "correct", generate)
     result = asyncio.run(grammar.full_check("He work."))
     assert "does not mean" in result["message"]
 
 
 def test_unavailable_quick_and_cancellation(monkeypatch):
-    async def check(*args, **kwargs):
-        raise ServiceError()
+    async def unexpected_check(*args, **kwargs):
+        raise AssertionError("quick feedback must not invoke inference or services")
 
-    monkeypatch.setattr(grammar.local, "check", check)
-    assert asyncio.run(grammar.quick_check("Hello"))["state"] == "unavailable"
+    for name in ("correct", "generate", "request"):
+        monkeypatch.setattr(grammar.local, name, unexpected_check)
+    result = asyncio.run(grammar.quick_check("Hello"))
+    assert result["state"] == "no_issues"
+    assert "limited quick checks" in result["message"]
 
-    async def cancel(*args, **kwargs):
+    def cancel(*args, **kwargs):
         raise asyncio.CancelledError()
 
-    monkeypatch.setattr(grammar.local, "check", cancel)
+    monkeypatch.setattr(grammar, "common_feedback", cancel)
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(grammar.quick_check("Hello"))
 
 
-@pytest.mark.parametrize(
-    "text,old,new,rule,expected",
-    [
-        (
-            "She teach English every Monday.",
-            "teach",
-            "teaches",
-            "HE_VERB_AGR",
-            "offered",
-        ),
-        ("Did they brought their tickets?", "brought", "bring", "DID_PAST", "offered"),
-        (
-            "She work yesterday.",
-            "work",
-            "works",
-            "HE_VERB_AGR",
-            "no_supported_correction",
-        ),
-        (
-            'He said, "She go home."',
-            "go",
-            "goes",
-            "HE_VERB_AGR",
-            "no_supported_correction",
-        ),
-        (
-            "She go to school and he work at home.",
-            "go",
-            "goes",
-            "HE_VERB_AGR",
-            "no_supported_correction",
-        ),
-    ],
-)
-def test_review_new_quick_examples(text, old, new, rule, expected):
-    result = grammar._select(text, evidence(text, old, [new], rule))
-    assert result["state"] == expected
-    if expected == "offered":
-        assert result["corrected_text"] == text.replace(old, new, 1)
+def test_quick_check_returns_deterministic_phrase_without_service(monkeypatch):
+    async def unexpected_check(*args, **kwargs):
+        raise AssertionError("quick feedback must not invoke inference or services")
 
-
-@pytest.mark.parametrize(
-    "proposal,expected",
-    [("He did not go home.", "offered"), ("He did go home.", "withheld")],
-)
-def test_review_full_correction_preserves_negation(monkeypatch, proposal, expected):
-    text = "He did not went home."
-
-    async def generate(*a, **kw):
-        return {"corrected_text": proposal}
-
-    async def check(*a, **kw):
-        return evidence(text, "went", ["go"], "DID_PAST")
-
-    async def count(*a):
-        return {"matches": []}
-
-    monkeypatch.setattr(grammar.local, "generate", generate)
-    monkeypatch.setattr(grammar.local, "check", check)
-    monkeypatch.setattr(grammar, "count_evidence", count)
-    assert asyncio.run(grammar.full_check(text))["state"] == expected
-
-
-@pytest.mark.parametrize(
-    "text,old,new,rule",
-    [
-        ("She can sings well.", "sings", "sing", "MD_BASEFORM"),
-        ("Does he has a ticket?", "has", "have", "DOES_X_HAS"),
-        ("They should waits outside.", "waits", "wait", "NON3PRS_VERB"),
-        (
-            "He did not went home.",
-            "went",
-            "go",
-            "AUXILIARY_DO_WITH_INCORRECT_VERB_FORM",
-        ),
-    ],
-)
-def test_new_quick_rules_require_exact_evidence(text, old, new, rule):
-    result = grammar._select(text, evidence(text, old, [new], rule))
+    for name in ("correct", "generate", "request"):
+        monkeypatch.setattr(grammar.local, name, unexpected_check)
+    result = asyncio.run(grammar.quick_check("I enjoy to swim."))
     assert result["state"] == "offered"
-    assert result["corrected_text"] == text.replace(old, new, 1)
-    assert result["explanation"]
+    assert result["corrected_text"] == "I enjoy swimming."
+    assert result["rule_id"] == "ENJOY_ACTIVITY"
 
 
-@pytest.mark.parametrize(
-    "text",
-    ['She said, "She can sings."', "My sister can sings.", "She can sings and dances."],
-)
-def test_new_modal_rule_rejects_unsupported_context(text):
-    assert (
-        grammar._select(text, evidence(text, "sings", ["sing"], "MD_BASEFORM"))["state"]
-        == "no_supported_correction"
-    )
+def test_quick_check_timeout_is_unavailable(monkeypatch):
+    async def timeout(_):
+        raise TimeoutError
 
-
-@pytest.mark.parametrize(
-    "text,proposal,count_expected",
-    [
-        ("She work yesterday.", "She worked yesterday.", False),
-        ('He said, "She go home."', 'He said, "She goes home."', False),
-        ("I bought three apple.", "I bought three apples.", True),
-    ],
-)
-def test_supplemental_checker_only_for_count_candidates(
-    monkeypatch, text, proposal, count_expected
-):
-    from unittest.mock import AsyncMock
-
-    monkeypatch.setattr(
-        grammar.local, "generate", AsyncMock(return_value={"corrected_text": proposal})
-    )
-    monkeypatch.setattr(grammar.local, "check", AsyncMock(return_value=evidence(text)))
-    counter = AsyncMock(return_value={"matches": []})
-    monkeypatch.setattr(grammar, "count_evidence", counter)
-    assert asyncio.run(grammar.full_check(text))["state"] == "withheld"
-    assert counter.await_count == int(count_expected)
-
-
-@pytest.mark.parametrize(
-    "text,old,new,rule,phrase",
-    [
-        (
-            "She can sings well.",
-            "sings",
-            "sing",
-            "MD_BASEFORM",
-            "When saying ‘She can …’, use ‘sing’, not ‘sings’. Say ‘She can sing’.",
-        ),
-        (
-            "They should waits outside.",
-            "waits",
-            "wait",
-            "NON3PRS_VERB",
-            "Say ‘They should wait’.",
-        ),
-        ("Does he has a ticket?", "has", "have", "DOES_X_HAS", "Say ‘Does he have’."),
-        (
-            "He did not went home.",
-            "went",
-            "go",
-            "AUXILIARY_DO_WITH_INCORRECT_VERB_FORM",
-            "Say ‘He did not go’, not ‘He did not went’.",
-        ),
-    ],
-)
-def test_plain_language_verb_explanations(text, old, new, rule, phrase):
-    result = grammar._select(text, evidence(text, old, [new], rule))
-    assert result["state"] == "offered"
-    assert phrase in result["explanation"]
-    assert all(
-        term not in result["explanation"] for term in ("basic form", "subject", "tense")
-    )
-
-
-@pytest.mark.parametrize(
-    "text,old,new",
-    [
-        ("I met a elephant.", "a", "an"),
-        ("She has an dog.", "an", "a"),
-        ("It takes a hour.", "a", "an"),
-    ],
-)
-def test_article_feedback_uses_checker_evidence(text, old, new):
-    raw = evidence(text, old, [new], "EN_A_VS_AN")
-    offset = text.index(f" {old} ") + 1
-    raw["matches"][0]["offset"] = offset
-    raw["matches"][0]["context"]["offset"] = offset
-    result = grammar._select(text, raw)
-    assert result["state"] == "offered"
-    assert result["corrected_text"] == text[:offset] + new + text[offset + len(old) :]
-
-
-@pytest.mark.parametrize(
-    "text", ['He wrote "a elephant."', "I met a elephant and a owl."]
-)
-def test_article_feedback_withholds_quoted_or_compound_text(text):
-    assert (
-        grammar._select(text, evidence(text, "a", ["an"], "EN_A_VS_AN"))["state"]
-        == "no_supported_correction"
-    )
+    monkeypatch.setattr(grammar.asyncio, "sleep", timeout)
+    result = asyncio.run(grammar.quick_check("Hello"))
+    assert result["state"] == "unavailable"
+    assert "No change was made" in result["message"]
 
 
 @pytest.mark.parametrize(
     "stage,expected",
-    [("model", "Ollama"), ("checker", "LanguageTool 6.6"), ("count", "SPEAKWELL_JAVA")],
+    [("model", "T5"), ("errant", "ERRANT")],
 )
 def test_full_feedback_identifies_failed_stage(monkeypatch, stage, expected):
     from unittest.mock import AsyncMock
 
-    text = "I bought three apple."
     generate = AsyncMock(return_value={"corrected_text": "I bought three apples."})
-    check = AsyncMock(return_value=evidence(text))
-    count = AsyncMock(return_value={"matches": []})
-    {"model": generate, "checker": check, "count": count}[
-        stage
-    ].side_effect = ServiceError()
-    monkeypatch.setattr(grammar.local, "generate", generate)
-    monkeypatch.setattr(grammar.local, "check", check)
-    monkeypatch.setattr(grammar, "count_evidence", count)
-    result = asyncio.run(grammar.full_check(text))
+    generate.side_effect = ServiceError() if stage == "model" else None
+    monkeypatch.setattr(grammar.local, "correct", generate)
+    if stage == "errant":
+
+        def unavailable(*args):
+            raise ServiceError()
+
+        monkeypatch.setattr(grammar, "_annotate_edits", unavailable)
+    result = asyncio.run(grammar.full_check("I bought three apple."))
     assert result["state"] == "unavailable"
     assert expected in result["message"]
-    assert text not in result["message"]
 
 
-def test_quick_failure_does_not_blame_model(monkeypatch):
-    from unittest.mock import AsyncMock
+def test_full_feedback_inference_exception_is_unavailable(monkeypatch):
+    async def fail(*args, **kwargs):
+        raise RuntimeError("private model failure")
 
-    monkeypatch.setattr(grammar.local, "check", AsyncMock(side_effect=ServiceError()))
-    result = asyncio.run(grammar.quick_check("Hello."))
+    monkeypatch.setattr(grammar.local, "correct", fail)
+    result = asyncio.run(grammar.full_check("I like swimming."))
     assert result["state"] == "unavailable"
-    assert "LanguageTool" in result["message"]
-    assert "Ollama" not in result["message"]
+    assert "T5" in result["message"]
+    assert "private model failure" not in result["message"]
 
 
-def test_article_rule_rejects_letter_inside_word():
-    text = "I saw a elephant."
-    assert (
-        grammar._select(text, evidence(text, "a", ["an"], "EN_A_VS_AN"))["state"]
-        == "no_supported_correction"
+def test_quick_check_keeps_optional_arguments_without_service_calls(monkeypatch):
+    async def unexpected_check(*args, **kwargs):
+        raise AssertionError("quick feedback must not invoke inference or services")
+
+    for name in ("correct", "generate", "request"):
+        monkeypatch.setattr(grammar.local, name, unexpected_check)
+    result = asyncio.run(
+        grammar.quick_check("Hello", history=(), spelling=False, names={"Hello"})
     )
-
-
-def spelling_evidence(text, entries):
-    raw = evidence(text)
-    for word, alternatives in entries:
-        raw["matches"].extend(
-            evidence(text, word, alternatives, "MORFOLOGIK_RULE_EN_US")["matches"]
-        )
-    return raw
-
-
-def test_spelling_alternatives_preserve_message_and_introduced_name(monkeypatch):
-    from unittest.mock import AsyncMock
-
-    text = "I am Lovejit and I realy like baskteball."
-    raw = spelling_evidence(
-        text,
-        [
-            ("Lovejit", ["Lovejoy"]),
-            ("realy", ["real", "ready", "really"]),
-            ("baskteball", ["basketball"]),
-        ],
-    )
-    monkeypatch.setattr(grammar.local, "check", AsyncMock(return_value=raw))
-    result = asyncio.run(grammar.quick_check(text))
-    assert result["state"] == "spelling"
-    assert [s["word"] for s in result["spelling"]] == ["realy", "baskteball"]
-    assert result["spelling"][1]["alternatives"] == ["basketball"]
-    assert "corrected_text" not in result
-
-
-def test_spelling_protects_name_from_recent_history():
-    text = "lovejit likes drawing."
-    raw = spelling_evidence(text, [("lovejit", ["lovejoy"])])
-    assert (
-        grammar.spelling_suggestions(
-            text, raw, [{"learner_text": "My name is lovejit."}]
-        )
-        == []
-    )
-
-
-def test_spelling_capitalized_unknowns_offer_optional_alternatives():
-    text = "I met Lovejit in Zorvania."
-    raw = spelling_evidence(text, [("Lovejit", ["Lovejoy"]), ("Zorvania", ["Romania"])])
-    suggestions = grammar.spelling_suggestions(text, raw)
-    assert len(suggestions) == 2
-    assert suggestions[0]["alternatives"] == ["Lovejoy"]
-    assert suggestions[1]["alternatives"] == ["Romania"]
-
-
-def test_spelling_rejects_splitting_and_unsafe_alternatives():
-    text = "I like basketballing."
-    raw = spelling_evidence(
-        text,
-        [
-            (
-                "basketballing",
-                [
-                    "basket balling",
-                    "<script>",
-                    "https://example.com",
-                    "Basketball",
-                    "basketball",
-                    "basketball",
-                ],
-            )
-        ],
-    )
-    assert grammar.spelling_suggestions(text, raw) == [
-        {"word": "basketballing", "alternatives": ["Basketball"]}
-    ]
-
-
-def test_spelling_does_not_invent_word_choice_replacement():
-    text = "I am Lovejit and I like Basketballing."
-    raw = spelling_evidence(
-        text, [("Lovejit", ["Lovejoy"]), ("Basketballing", ["Basket balling"])]
-    )
-    assert grammar.spelling_suggestions(text, raw) == [
-        {"word": "Basketballing", "alternatives": []}
-    ]
-
-
-def test_spelling_unicode_offsets_and_mismatched_evidence():
-    text = "😀 I recieved it."
-    raw = spelling_evidence(text, [("recieved", ["received"])])
-    assert grammar.spelling_suggestions(text, raw)[0]["word"] == "recieved"
-    raw["matches"][0]["context"]["text"] = "wrong text"
-    with pytest.raises(ValueError):
-        grammar.spelling_suggestions(text, raw)
-
-
-def test_spelling_disabled_for_unedited_recording(monkeypatch):
-    from unittest.mock import AsyncMock
-
-    text = "I recieved it."
-    monkeypatch.setattr(
-        grammar.local,
-        "check",
-        AsyncMock(return_value=spelling_evidence(text, [("recieved", ["received"])])),
-    )
-    result = asyncio.run(grammar.quick_check(text, spelling=False))
-    assert "spelling" not in result
-
-
-def test_spelling_runtime_names_are_case_insensitive():
-    text = "I met ZORVANIA and Baskteball."
-    raw = spelling_evidence(
-        text, [("ZORVANIA", ["Romania"]), ("Baskteball", ["Basketball"])]
-    )
-    assert grammar.spelling_suggestions(text, raw, names={"zorvania"}) == [
-        {"word": "Baskteball", "alternatives": ["Basketball"]}
-    ]
+    assert result["state"] == "no_issues"
 
 
 @pytest.mark.parametrize(
@@ -503,9 +413,7 @@ def test_common_phrase_coverage(text, expected):
     result = asyncio.run(grammar.quick_check(text))
     assert result["state"] == "offered"
     assert result["corrected_text"] == expected
-    decision = grammar.evidence(text, expected, {"matches": []})
-    assert decision["state"] == "provisional"
-    assert decision["explanation"] == result["explanation"]
+    assert result["explanation"]
 
 
 @pytest.mark.parametrize(
@@ -538,35 +446,17 @@ def test_common_phrase_respects_confirmed_name():
     )
 
 
-def test_common_phrase_rejects_unrelated_model_rewrite():
-    result = grammar.evidence(
-        "I like basketballing.", "I love playing basketball.", {"matches": []}
-    )
-    assert result["state"] == "withheld"
-
-
-def test_common_phrase_full_check_uses_shared_rule(monkeypatch):
+def test_full_check_describes_phrase_proposal(monkeypatch):
     from unittest.mock import AsyncMock
 
     monkeypatch.setattr(
         grammar.local,
-        "generate",
+        "correct",
         AsyncMock(return_value={"corrected_text": "I like playing basketball."}),
-    )
-    monkeypatch.setattr(
-        grammar.local,
-        "check",
-        AsyncMock(return_value=evidence("I like basketballing.")),
     )
     result = asyncio.run(grammar.full_check("I like basketballing."))
     assert result["state"] == "offered"
-    assert result["rule_id"] == "PLAY_BASKETBALL"
-
-
-def test_common_article_sentence_initial():
-    text = "An dog is here."
-    result = grammar._select(text, evidence(text, "An", ["A"], "EN_A_VS_AN"))
-    assert result["corrected_text"] == "A dog is here."
+    assert result["edits"]
 
 
 @pytest.mark.parametrize(
@@ -591,7 +481,7 @@ def test_common_article_sentence_initial():
 def test_small_coverage_expansion(text, expected):
     result = asyncio.run(grammar.quick_check(text))
     assert result["corrected_text"] == expected
-    assert grammar.evidence(text, expected, {"matches": []})["state"] == "provisional"
+    assert result["explanation"]
 
 
 @pytest.mark.parametrize(
@@ -612,81 +502,3 @@ def test_small_coverage_expansion(text, expected):
 )
 def test_small_coverage_expansion_preserves_valid_or_ambiguous_text(text):
     assert grammar.common_feedback(text) is None
-
-
-@pytest.mark.parametrize(
-    "subject,activity,present,past",
-    [
-        ("I", "playing", "am", "was"),
-        ("She", "cooking", "is", "was"),
-        ("He", "running", "is", "was"),
-        ("It", "raining", "is", "was"),
-        ("We", "not going", "are", "were"),
-        ("They", "working", "are", "were"),
-        ("You", "studying", "are", "were"),
-    ],
-)
-def test_missing_auxiliary_tense_choices(monkeypatch, subject, activity, present, past):
-    from unittest.mock import AsyncMock
-
-    phrase = f"{subject} {activity}"
-    text = phrase + "."
-    raw = evidence(
-        text,
-        phrase,
-        [f"{subject} {present} {activity}", f"{subject} {past} {activity}"],
-        "PRP_VBG",
-    )
-    monkeypatch.setattr(grammar.local, "check", AsyncMock(return_value=raw))
-    result = asyncio.run(grammar.quick_check(text))
-    assert result["state"] == "suggestions"
-    assert "corrected_text" not in result
-    assert result["grammar_suggestions"][0]["choices"] == [
-        f"Present: {subject} {present} {activity}",
-        f"Past: {subject} {past} {activity}",
-    ]
-
-
-def test_missing_auxiliary_coexists_with_spelling(monkeypatch):
-    from unittest.mock import AsyncMock
-
-    text = "I playing baskteball."
-    raw = evidence(text, "I playing", ["I am playing", "I was playing"], "PRP_VBG")
-    raw["matches"] += spelling_evidence(text, [("baskteball", ["basketball"])])[
-        "matches"
-    ]
-    monkeypatch.setattr(grammar.local, "check", AsyncMock(return_value=raw))
-    result = asyncio.run(grammar.quick_check(text))
-    assert result["state"] == "suggestions"
-    assert result["spelling"][0]["alternatives"] == ["basketball"]
-    assert len(result["grammar_suggestions"]) == 1
-
-
-@pytest.mark.parametrize(
-    "text,old,choices",
-    [
-        ('He said "I playing".', "I playing", ["I am playing"]),
-        ("I saw her playing.", "her playing", ["she is playing"]),
-        (
-            "I playing.",
-            "I playing",
-            ["I love playing", "I am swimming", "I am not playing"],
-        ),
-        ("I not going.", "I not going", ["I am going"]),
-    ],
-)
-def test_missing_auxiliary_preserves_wording(text, old, choices):
-    assert (
-        grammar.missing_auxiliaries(text, evidence(text, old, choices, "PRP_VBG")) == []
-    )
-
-
-def test_missing_auxiliary_rejects_stale_or_overlapping_evidence():
-    text = "I playing."
-    raw = evidence(text, "I playing", ["I am playing"], "PRP_VBG")
-    raw["matches"][0]["context"]["text"] = "X playing."
-    with pytest.raises(ValueError):
-        grammar.missing_auxiliaries(text, raw)
-    raw = evidence(text, "I playing", ["I am playing"], "PRP_VBG")
-    raw["matches"] += evidence(text, "playing", ["play"], "OTHER")["matches"]
-    assert grammar.missing_auxiliaries(text, raw) == []

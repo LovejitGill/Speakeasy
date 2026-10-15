@@ -233,6 +233,196 @@ def test_feedback_layout_exposes_correction_and_explanation(page, monkeypatch):
     assert any(t.value == "She can sings." for t in app.text)
 
 
+@pytest.mark.parametrize("with_explanation", [True, False])
+def test_full_feedback_restores_edit_details_and_original(page, with_explanation):
+    app, path = page
+    app.text_area(key="draft").input("He work every day.").run()
+    button(app, "Send").click().run()
+    job = storage.claim(path)
+    edit = {"before": "work", "after": "works", "category": "R:VERB:SVA"}
+    if with_explanation:
+        edit.update(grammar.explanation_for_category(edit["category"]))
+    assert storage.finish(
+        job,
+        {
+            "state": "offered",
+            "corrected_text": "He works every day.",
+            "explanation": "These labels describe proposed edits.",
+            "edits": [edit],
+        },
+        path,
+    )
+    app.run()
+    assert not app.exception
+    panel = next(
+        e for e in app.expander if e.label == "Full grammar check · Suggested edit"
+    )
+    assert panel.proto.expanded
+    assert any(t.value == "He works every day." for t in panel.text)
+    assert any(t.value == "Before: work" for t in panel.text)
+    assert any(t.value == "After: works" for t in panel.text)
+    assert any(c.value == "Edit 1 · R:VERB:SVA" for c in panel.caption)
+    assert any(
+        "original message remains unchanged" in c.value.lower() for c in panel.caption
+    )
+    if with_explanation:
+        assert any(t.value == edit["explanation"] for t in panel.text)
+        assert any(
+            c.value == "Explanation source: generic local" for c in panel.caption
+        )
+    else:
+        assert any("No local explanation" in t.value for t in panel.text)
+    assert any(t.value == "He work every day." for t in app.text)
+    assert any(c.value == "YOU · ORIGINAL MESSAGE" for c in app.caption)
+    assert (
+        storage.history(job["session_id"], path)[0]["learner_text"]
+        == "He work every day."
+    )
+
+
+def test_full_feedback_shows_multiple_edits_provenance_and_survives_rerun(page):
+    app, path = page
+    original = "She go to store yesterday."
+    corrected = "She went to the store yesterday."
+    app.text_area(key="draft").input(original).run()
+    button(app, "Send").click().run()
+    job = storage.claim(path)
+    edits = [
+        {
+            "before": "go",
+            "after": "went",
+            "category": "R:VERB:TENSE",
+            **grammar.explanation_for_category("R:VERB:TENSE"),
+        },
+        {
+            "before": "",
+            "after": "the",
+            "category": "M:DET",
+            **grammar.explanation_for_category("M:DET"),
+        },
+    ]
+    assert storage.finish(
+        job,
+        {
+            "state": "offered",
+            "corrected_text": corrected,
+            "explanation": "ERRANT labels describe edits; they do not verify corrections.",
+            "proposal_provenance": "AI-generated",
+            "edits": edits,
+        },
+        path,
+    )
+    for _ in range(2):
+        current = app.run()
+        assert not current.exception
+        panel = next(
+            e
+            for e in current.expander
+            if e.label == "Full grammar check · Suggested edits"
+        )
+        assert panel.proto.expanded
+        assert any(t.value == corrected for t in panel.text)
+        assert any(c.value == "Proposal source: AI-generated" for c in panel.caption)
+        for index, edit in enumerate(edits, start=1):
+            assert any(
+                c.value == f"Edit {index} · {edit['category']}" for c in panel.caption
+            )
+            assert any(
+                t.value == f"Before: {edit['before'] or '(nothing)'}"
+                for t in panel.text
+            )
+            assert any(t.value == f"After: {edit['after']}" for t in panel.text)
+            assert any(t.value == edit["explanation"] for t in panel.text)
+        assert any(t.value == original for t in current.text)
+        assert current.text_area(key="draft").value == ""
+    fresh = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py")
+    fresh.query_params["session"] = job["session_id"]
+    fresh.run()
+    assert not fresh.exception
+    assert any(t.value == original for t in fresh.text)
+    assert any(t.value == corrected for t in fresh.text)
+    assert any(t.value == "After: the" for t in fresh.text)
+    assert storage.history(job["session_id"], path)[0]["learner_text"] == original
+
+
+def test_full_feedback_shows_deletion_without_replacing_original(page):
+    app, path = page
+    original = "I like to swimming."
+    app.text_area(key="draft").input(original).run()
+    button(app, "Send").click().run()
+    job = storage.claim(path)
+    assert storage.finish(
+        job,
+        {
+            "state": "offered",
+            "corrected_text": "I like swimming.",
+            "explanation": "A local model proposed this edit; review the intended meaning.",
+            "proposal_provenance": "AI-generated",
+            "edits": [
+                {
+                    "before": "to",
+                    "after": "",
+                    "category": "U:PREP",
+                    **grammar.explanation_for_category("U:PREP"),
+                }
+            ],
+        },
+        path,
+    )
+    app.run()
+    assert not app.exception
+    panel = next(
+        e for e in app.expander if e.label == "Full grammar check · Suggested edit"
+    )
+    assert any(t.value == "Before: to" for t in panel.text)
+    assert any(t.value == "After: (nothing)" for t in panel.text)
+    assert any(c.value == "Edit 1 · U:PREP" for c in panel.caption)
+    assert any(t.value == original for t in app.text)
+    assert storage.history(job["session_id"], path)[0]["learner_text"] == original
+
+
+@pytest.mark.parametrize("state", ["unavailable", "error", "unsupported", "withheld"])
+def test_full_feedback_states_are_visible_without_a_correction(page, state):
+    app, path = page
+    app.text_area(key="draft").input("I like books.").run()
+    button(app, "Send").click().run()
+    job = storage.claim(path)
+    assert storage.finish(
+        job,
+        {
+            "state": state,
+            "message": "No issues detected by this check. This does not mean the sentence is error-free."
+            if state == "withheld"
+            else f"Full grammar feedback is {state}.",
+        },
+        path,
+    )
+    app.run()
+    assert not app.exception
+    expected = {
+        "unavailable": "Unavailable",
+        "error": "Error",
+        "unsupported": "Unsupported",
+        "withheld": "No issues detected",
+    }[state]
+    panel = next(
+        e for e in app.expander if e.label == f"Full grammar check · {expected}"
+    )
+    assert panel.proto.expanded is (state != "withheld")
+    if state in {"unavailable", "error"}:
+        assert any(state in warning.value for warning in panel.warning)
+    else:
+        assert any(
+            "error-free" in caption.value or state in caption.value
+            for caption in panel.caption
+        )
+    assert not any(c.value == "PROPOSED CORRECTION" for c in panel.caption)
+    assert any(t.value == "I like books." for t in app.text)
+    assert (
+        storage.history(job["session_id"], path)[0]["learner_text"] == "I like books."
+    )
+
+
 def test_session_layout_starts_with_only_opener(page):
     app, _ = page
     assert app.title[0].value == "Beginner - Daily Activities"
@@ -373,15 +563,15 @@ def test_enabled_send_still_rejects_empty_input(page):
     assert storage.history(storage.sessions(path)[0]["id"], path) == []
 
 
-@pytest.mark.parametrize("state", ["withheld", "unavailable"])
+@pytest.mark.parametrize("state", ["withheld", "no_issues", "unavailable"])
 def test_quick_feedback_encourages_only_completed_checks(page, monkeypatch, state):
     app, _ = page
 
     async def quick(text, **kwargs):
         return {
             "state": state,
-            "message": "No supported correction found. This does not mean the message is error-free."
-            if state == "withheld"
+            "message": "No issues detected by this check. This does not mean the message is error-free."
+            if state in {"withheld", "no_issues"}
             else "Grammar feedback could not finish.",
         }
 
@@ -390,8 +580,8 @@ def test_quick_feedback_encourages_only_completed_checks(page, monkeypatch, stat
     button(app, "Send").click().run()
     assert not app.exception
     panel = next(e for e in app.expander if e.label.startswith("Quick feedback"))
-    if state == "withheld":
-        assert "Nice effort! No supported corrections found." in panel.label
+    if state in {"withheld", "no_issues"}:
+        assert "No issues detected" in panel.label
         assert any("does not mean" in c.value for c in panel.caption)
     else:
         assert "Unavailable" in panel.label

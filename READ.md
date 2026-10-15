@@ -17,7 +17,8 @@ machine; sessions are stored in local SQLite.
 - **Voice input:** record, transcribe locally with Whisper, edit, then send. Nothing submits automatically.
 - **Follow-ups:** prepared questions chosen by a local model, with short-term recall of names and hobbies
 - **Grammar feedback:** instant rule-based suggestions, plus an optional full check
-  (Qwen3 4B proposal verified by LanguageTool). Unsupported edits are withheld.
+  (local T5 proposals with ERRANT edit labels and generic local explanations).
+  Suggestions can be wrong and are never applied automatically.
 - **Saved sessions:** reopen past sessions from the sidebar; if saving fails, retry without regenerating the reply
 - **Background checks:** single worker, cancellable, results tied to the original turn
 
@@ -29,12 +30,12 @@ machine; sessions are stored in local SQLite.
 A step-by-step guide to installing and using Speakeasy. About 20–40 minutes the
 first time, mostly downloads. After that, starting a session takes under a minute.
  
-Speakeasy runs four things on your computer:
+Speakeasy runs these components on your computer:
  
 | Piece | What it does | Port |
 |---|---|---|
 | Ollama | Runs the Qwen3 language models | 11434 |
-| LanguageTool | Checks grammar | 8081 |
+| T5 and ERRANT | Propose corrections and describe edits (on demand) | none |
 | Streamlit app | The web interface you use | 8501 |
 | Whisper | Transcribes recordings (loads on demand, no server) | none |
  
@@ -44,7 +45,7 @@ Everything stays on your machine. You need internet only for the downloads in Pa
  
 ## Part 1: Install the prerequisites
  
-You need **uv**, **Ollama**, and **Java 21**. Python is handled for you.
+You need **uv**. Ollama is optional for model-selected conversation replies. Python is handled for you.
  
 ### macOS
  
@@ -52,17 +53,6 @@ You need **uv**, **Ollama**, and **Java 21**. Python is handled for you.
 # Homebrew (skip if you already have it): https://brew.sh
 brew install uv
 brew install --cask ollama      # or download from https://ollama.com
-brew install openjdk@21
-```
- 
-Homebrew's Java is not on your PATH by default. Find it and set it for the
-terminal that launches LanguageTool and the app:
- 
-```bash
-# Apple Silicon
-export SPEAKWELL_JAVA=/opt/homebrew/opt/openjdk@21/bin/java
-# Intel Mac
-export SPEAKWELL_JAVA=/usr/local/opt/openjdk@21/bin/java
 ```
  
 ### Linux (Debian/Ubuntu shown)
@@ -70,7 +60,6 @@ export SPEAKWELL_JAVA=/usr/local/opt/openjdk@21/bin/java
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 curl -fsSL https://ollama.com/install.sh | sh
-sudo apt install openjdk-21-jre-headless
 ```
  
 Restart your terminal so `uv` is on your PATH.
@@ -80,7 +69,6 @@ Restart your terminal so `uv` is on your PATH.
 ```bash
 uv --version
 ollama --version
-java -version      # or: "$SPEAKWELL_JAVA" -version   (must report 21)
 ```
  
 ### Stop any background Ollama
@@ -120,7 +108,11 @@ change versions.
  
 ## Part 4: Download the models (one time)
  
-You need two terminals for this part.
+Grammar setup needs no Ollama. Run `uv run --locked python tools/manage.py setup`
+to download T5, Whisper, and WordNet data. The spaCy English model is installed
+by `uv sync --locked`.
+
+For model-selected conversation replies, use two terminals for this part.
  
 **Terminal 1:** start Ollama and leave it running.
  
@@ -132,37 +124,35 @@ bash tools/ollama.sh serve
  
 ```bash
 bash tools/ollama.sh pull qwen3:1.7b      # conversation model, about 1.4 GB
-bash tools/ollama.sh pull qwen3:4b        # full grammar model, about 2.5 GB
-uv run --locked python tools/setup.py checker   # LanguageTool 6.6, checksum verified
 uv run --locked python tools/setup.py speech    # Whisper base.en, pinned revision
+uv run --locked python tools/setup.py grammar   # pinned T5 grammar weights
+uv run --locked python -c 'import errant, spacy; spacy.load("en_core_web_sm"); errant.load("en"); print("English grammar models ready")'
 ```
  
-Expected output ends with `LanguageTool 6.6 verified and extracted. Java 21 is
-required.` and `Pinned Whisper base.en files downloaded.`
+Expected output includes `Pinned Whisper base.en files downloaded.` and
+`Pinned T5 grammar model files downloaded.` The spaCy English model is installed
+by `uv sync --locked`
+in Part 3; the final command confirms it loads locally.
  
 Models land in `.models/` and `.tools/` inside the project (both are git-ignored).
 You will not need internet again.
- 
-If the checker download prints `Checksum mismatch`, delete
-`.tools/LanguageTool-6.6.zip` and rerun that command.
+To force offline startup after installation, set `HF_HUB_OFFLINE=1`,
+`TRANSFORMERS_OFFLINE=1`, `HF_HUB_DISABLE_TELEMETRY=1`, and `UV_OFFLINE=1`, then use
+`uv run --offline --locked streamlit run app.py` in Part 5. Grammar inference sets
+the Hugging Face offline flags in its child process as well.
  
 ---
  
 ## Part 5: Start everything
  
-Use **three terminals** in the `Speakeasy` folder (Terminal 1 is already running
-Ollama from Part 4).
+Use one terminal for the app. If using Ollama, keep its terminal from Part 4 open.
  
 | Terminal | Command | Leave running |
 |---|---|---|
-| 1 | `bash tools/ollama.sh serve` | yes |
-| 2 | `bash tools/checker.sh` | yes |
-| 3 | `uv run --locked streamlit run app.py` | yes |
+| Optional | `bash tools/ollama.sh serve` | yes |
+| App | `uv run --locked python tools/manage.py launch` | yes |
  
-Keep a fourth terminal free for other commands, such as tests.
- 
-If you set `SPEAKWELL_JAVA` in Part 1, set it in **both** the checker terminal and
-the app terminal.
+Keep a third terminal free for other commands, such as tests.
  
 Streamlit prints a local URL, usually **http://127.0.0.1:8501**. Open it in your
 browser.
@@ -173,10 +163,9 @@ In any free terminal:
  
 ```bash
 curl -s http://127.0.0.1:11434/api/tags | head -c 200     # lists your models
-curl -s http://127.0.0.1:8081/v2/languages | head -c 100  # LanguageTool answers
 ```
  
-Both should print JSON. If one is empty or errors, that service is not running.
+The command should print JSON. If it is empty or errors, Ollama is not running.
  
 ---
  
@@ -198,9 +187,8 @@ Both should print JSON. If one is empty or errors, that service is not running.
    5. Use **Record again** to redo it, or **Retry transcription** if it failed.
 5. **Read the reply.** The tutor responds with a follow-up question.
 6. **Read your feedback** under your message:
-   - **Quick feedback** appears immediately: simple rule-based suggestions and
-     optional "Did you mean" spelling alternatives. Click **This is a name** to
-     stop a name being flagged (remembered until you close the browser session).
+   - **Quick feedback** uses limited local phrase rules. No detected issue does
+     not prove the sentence is correct.
    - **Full grammar check** runs in the background after you send. It may take up
      to about a minute. Click **Cancel grammar check** to stop it. If no correction
      is shown, that is not proof the sentence is correct.
@@ -226,12 +214,11 @@ rather than sending again.
  
 ## Part 7: Daily use
  
-**Start:** open three terminals in the project folder and run:
+**Start:** run the app in the project folder. Start Ollama separately only if you
+want model-selected conversation replies:
  
 ```bash
-bash tools/ollama.sh serve
-bash tools/checker.sh
-uv run --locked streamlit run app.py
+uv run --locked python tools/manage.py launch
 ```
  
 **Stop:** press `Ctrl+C` in each terminal. Your sessions remain saved.
@@ -253,10 +240,10 @@ refresh alone can leave an old worker running.
 ```bash
 uv run --locked pytest -q                      # unit and app tests, no services needed
 uv run --locked ruff check . && uv run --locked ruff format --check .
-uv run --locked python tools/acceptance.py     # needs Ollama, both models, LanguageTool
+uv run --locked python tools/acceptance.py     # needs Ollama, Qwen 1.7B, cached T5/spaCy models
 ```
  
-Most tests use mocks, so `pytest` runs without Ollama or LanguageTool.
+Most tests use mocks, so `pytest` runs without running services; ERRANT integration tests use the installed spaCy model.
  
 ---
 
@@ -270,12 +257,9 @@ Most tests use mocks, so `pytest` runs without Ollama or LanguageTool.
 | Symptom | Likely cause and fix |
 |---|---|
 | "Speech model missing. Run: uv run python tools/setup.py speech" | Whisper not downloaded. Run the `speech` setup command from Part 4 |
-| Replies look generic or fall back to the same questions | Ollama is not running or the model digest does not match. Check `tools/ollama.sh serve` is up and both models were pulled with `tools/ollama.sh` |
+| Replies use prepared fallback questions | Optional Ollama is not running or the Qwen 1.7B digest does not match. Run `uv run --locked python tools/manage.py setup --with-ollama` and launch with `--with-ollama` |
 | Feedback unavailable after a model update | The upstream model tag changed. Re-pull with `tools/ollama.sh pull ...`; see [models.md](models.md) |
 | Port 11434 already in use | Another Ollama is running. Stop it (Part 1) or use that instance consistently |
-| `cd: .../.tools/LanguageTool-6.6: No such file or directory` when starting the checker | LanguageTool is not installed yet. Run `uv run --locked python tools/setup.py checker` (Part 4) |
-| `java: command not found` or LanguageTool will not start | Java 21 not installed or not on PATH. Set `SPEAKWELL_JAVA` |
-| Quick feedback shows nothing right after startup | The first LanguageTool request after launch can be slow. Wait a few seconds and send again |
 | Full grammar check unavailable | See [troubleshooting.md](troubleshooting.md) |
 | Microphone does nothing | Allow microphone access for `127.0.0.1` in your browser; check no other app is using the mic |
 | "Record between 0.3 and 60 seconds of speech" | Recording was too short or too long |

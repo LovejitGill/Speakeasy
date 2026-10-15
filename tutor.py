@@ -1,4 +1,4 @@
-"""Complete a typed turn, retaining a generated reply when storage fails."""
+"""Save the original turn and queue full feedback for the existing worker."""
 
 import asyncio
 import uuid
@@ -53,6 +53,7 @@ def submit(
         "full_grammar": full_grammar,
     }
     try:
+        # This only queues the turn ID; T5/ERRANT never run in submit/UI rendering.
         storage.save_turn(turn, grammar=full_grammar, path=path)
     except StorageError:
         return turn, False
