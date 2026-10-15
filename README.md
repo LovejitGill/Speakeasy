@@ -16,7 +16,7 @@ This **Speakeasy** repository is a fresh implementation informed by
 [the original Speakwell application](https://github.com/LovejitGill/Speakwell).
 It focuses on one conversation workflow with straightforward Python modules.
 
-**Jump to:** [Features/Limitations](#featureslimitations) · [Quickstart](#not-so-quick-start) ·  [Roadmap](#roadmap) · [Verification](#verification)
+**Jump to:** [Features/Limitations](#featureslimitations) · [Quickstart](#not-so-quick-start) · [Development tests](tests/README.md) · [Roadmap](#roadmap)
 
 ## Features/Limitations
 
@@ -257,7 +257,7 @@ model-generated conversation; longer exchanges may run out of questions.
 
 ---
 
-## Part 5: Troubleshooting and verification
+## Part 5: Troubleshooting
 
 - **Optional Ollama runtime missing:** set the executable path in Part 2 and rerun setup with `--with-ollama`.
   Do not add a backslash before `@` in Homebrew paths.
@@ -291,35 +291,24 @@ Run only the troubleshooting command relevant to your error. To verify imports:
 uv run --locked python -c "import streamlit, faster_whisper, httpx, numpy, errant, spacy; spacy.load('en_core_web_sm'); print('Imports OK')"
 ```
 
-For focused setup/launch tests:
+See [Development tests](tests/README.md) for test commands and the optional
+real-service smoke command. The smoke command needs Ollama, the pinned Qwen 1.7B
+model, and cached T5/spaCy assets. Runtime model loading does not download weights.
 
-```bash
-uv run --locked pytest tests/test_manage.py -q
-```
+### Try it on your device
 
-See **Verification** below for the test suite and real-service smoke command.
-The smoke command needs Ollama, the pinned Qwen 1.7B model, and cached T5/spaCy
-assets. Runtime model loading does not download weights.
+- Type a message and send it. Confirm that a tutor reply and quick feedback appear.
+- Try **Full grammar check**. Review any suggestion and confirm your original
+  message remains unchanged. Suggestions may be incorrect or miss errors.
+- Record a short message. Confirm the transcript appears for review, edit it,
+  then send it yourself.
+- Open a saved session, then refresh the page and check that completed turns
+  are still available.
+
+These steps let you check the app’s behavior on your device, including
+microphone access and transcription.
 
 </details>
-
-## Verification
-
-```bash
-uv run --locked pytest -q
-uv run --locked ruff check .
-uv run --locked ruff format --check .
-# With Ollama, both models, and cached T5/spaCy models available:
-uv run --locked python tools/acceptance.py
-```
-
-The migration audit on 2026-10-14 ran the full suite (**320 passed, 8 failed,
-11 skipped**), focused worker/UI/grammar checks, real CPU T5/ERRANT cases, the
-local-service acceptance script, and an AppTest workflow through persistence,
-WordNet, and Whisper using a WAV fixture. The eight failures are conversation
-clarification tests because dictionary lookup runs before clarification routing.
-These checks do not establish general correction accuracy or physical microphone
-behavior.
 
 ## Roadmap
 
