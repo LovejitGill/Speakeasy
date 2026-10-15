@@ -42,11 +42,16 @@ It focuses on one conversation workflow with straightforward Python modules.
 |---|---|
 | `app.py` | Page controls, recording, editable drafts, and feedback display |
 | `assets/style.css` / `.streamlit/config.toml` | Responsive layout styling and the app-wide color theme |
-| `tutor.py` | Coordinate a reply, quick feedback, and saving |
-| `conversation.py` / `context.py` | Select follow-ups and handle supported facts, people, and food constraints |
-| `grammar.py` | Quick rules, full checks, ERRANT edits, and local explanations |
-| `local.py` / `speech.py` | Bounded local HTTP requests, offline T5 correction and transcription |
-| `storage.py` / `worker.py` | Direct SQLite operations and recoverable grammar jobs |
+| `speakeasy/tutor.py` | Coordinate a reply, quick feedback, and saving |
+| `speakeasy/conversation.py` / `speakeasy/context.py` | Select follow-ups and handle supported facts, people, and food constraints |
+| `speakeasy/grammar.py` | Quick rules, full checks, ERRANT edits, and local explanations |
+| `speakeasy/local.py` / `speakeasy/speech.py` | Bounded local HTTP requests, offline T5 correction and transcription |
+| `speakeasy/storage.py` / `speakeasy/worker.py` | Direct SQLite operations and recoverable grammar jobs |
+| `speakeasy/vocabulary.py` / `speakeasy/errors.py` | Local dictionary lookup and safe application errors |
+
+Application modules live in the `speakeasy` package; `app.py` remains the
+Streamlit entry point. Run commands from the repository root. Model files,
+rules, assets, and saved history remain in their existing root directories.
 
 The model selects among prepared follow-ups rather than writing unrestricted
 conversational prose. This limits invented facts but also limits flexibility.
@@ -64,6 +69,9 @@ facts. Corrections are displayed separately and never enter conversational histo
   question is asking for; a following answer retains that question's context.
   Fragments do not become remembered facts. Ambiguous answers and unsupported
   questions still fall back; longer conversations can exhaust prepared follow-ups.
+  One known routing issue: “What do you mean?” can be treated as a WordNet lookup
+  for “you” instead of a request to explain the tutor's question. This also affects
+  clarification follow-ups that depend on that reply.
 - Checked word comparisons cover **lend/borrow** and **teach/learn**. Ask
   **“What does basketball mean?”** or **“Define bank”** for up to three local
   Open English Wordnet meanings and available examples. Definitions may be formal;

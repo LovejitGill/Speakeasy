@@ -10,7 +10,7 @@ from contextlib import closing
 from pathlib import Path
 
 VERSION = "2025"
-DB_PATH = Path(__file__).parent / ".models/oewn-2025.sqlite3"
+DB_PATH = Path(__file__).resolve().parents[1] / ".models/oewn-2025.sqlite3"
 SOURCE = "https://en-word.net/downloads"
 
 

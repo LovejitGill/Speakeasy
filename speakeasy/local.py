@@ -8,7 +8,7 @@ from pathlib import Path
 
 import httpx
 
-from errors import ServiceError
+from .errors import ServiceError
 
 OLLAMA = "http://127.0.0.1:11434"
 MODELS = {
@@ -19,7 +19,7 @@ MODELS = {
 GRAMMAR_MODEL_DIR = Path(
     os.environ.get(
         "SPEAKWELL_GRAMMAR_MODEL",
-        str(Path(__file__).parent / ".models/gec-t5_small"),
+        str(Path(__file__).resolve().parents[1] / ".models/gec-t5_small"),
     )
 )
 GRAMMAR_MODEL_ID = "Unbabel/gec-t5_small"
@@ -72,8 +72,10 @@ async def correct(text):
         async with asyncio.timeout(45):
             process = await asyncio.create_subprocess_exec(
                 sys.executable,
-                str(Path(__file__).resolve()),
+                "-m",
+                "speakeasy.local",
                 "--grammar",
+                cwd=Path(__file__).resolve().parents[1],
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,

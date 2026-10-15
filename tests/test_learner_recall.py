@@ -1,6 +1,6 @@
 import pytest
 
-from context import recall
+from speakeasy.context import recall
 
 
 def row(text, reply="Tell me more."):

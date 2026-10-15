@@ -6,9 +6,9 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
-import local
-from conversation import validate_text
-from errors import PracticeError, ServiceError
+from . import local
+from .conversation import validate_text
+from .errors import PracticeError, ServiceError
 
 _UNKNOWN_CATEGORY_EXPLANATION = (
     "ERRANT assigned a category to this edit, but no explanation is available for it."
@@ -37,9 +37,9 @@ def explanation_for_category(category):
 @lru_cache(maxsize=1)
 def _grammar_explanations():
     return json.loads(
-        (Path(__file__).parent / "rules" / "grammar_explanations.json").read_text(
-            encoding="utf-8"
-        )
+        (
+            Path(__file__).resolve().parents[1] / "rules" / "grammar_explanations.json"
+        ).read_text(encoding="utf-8")
     )
 
 

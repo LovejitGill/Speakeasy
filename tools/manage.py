@@ -15,8 +15,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import local
-from errors import ServiceError
+from speakeasy import local
+from speakeasy.errors import ServiceError
 
 CONFIG = ROOT / ".env.local.json"
 KEYS = (
@@ -185,8 +185,8 @@ def main():
         if args.command == "setup":
             setup(children, with_ollama=args.with_ollama)
         else:
-            from speech import MODEL_DIR, MODEL_FILES
-            from vocabulary import DB_PATH as WORDNET_PATH
+            from speakeasy.speech import MODEL_DIR, MODEL_FILES
+            from speakeasy.vocabulary import DB_PATH as WORDNET_PATH
 
             if not WORDNET_PATH.is_file():
                 raise ValueError(

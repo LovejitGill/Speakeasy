@@ -106,7 +106,7 @@ def test_setup_includes_explicit_grammar_model_download(tmp_path, monkeypatch):
     monkeypatch.setenv("SPEAKWELL_OLLAMA", "/missing/ollama")
     import huggingface_hub
 
-    import local
+    from speakeasy import local
     from tools import setup
 
     download = Mock()
@@ -161,8 +161,7 @@ def test_discover_only_requires_executable_ollama(tmp_path, monkeypatch):
 def test_launch_starts_app_with_optional_conversation_service(
     tmp_path, monkeypatch, with_ollama
 ):
-    import speech
-    import vocabulary
+    from speakeasy import speech, vocabulary
 
     args = ["manage.py", "launch"] + (["--with-ollama"] if with_ollama else [])
     monkeypatch.setattr(manage.sys, "argv", args)

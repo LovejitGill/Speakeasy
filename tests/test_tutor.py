@@ -4,9 +4,8 @@ import asyncio
 
 import pytest
 
-import local
-import tutor
-from errors import ServiceError
+from speakeasy import local, tutor
+from speakeasy.errors import ServiceError
 
 
 def test_independent_requests_overlap_and_save_once(monkeypatch):

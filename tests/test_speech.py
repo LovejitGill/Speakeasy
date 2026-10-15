@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-import speech
+from speakeasy import speech
 
 
 def wav(*, seconds=0.4, rate=16000, channels=1, silent=False):

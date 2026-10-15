@@ -5,9 +5,8 @@ import fcntl
 import threading
 from pathlib import Path
 
-import grammar
-import storage
-from errors import StorageError
+from . import grammar, storage
+from .errors import StorageError
 
 
 class Worker:

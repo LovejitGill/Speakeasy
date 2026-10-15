@@ -3,10 +3,8 @@
 import asyncio
 import uuid
 
-import conversation
-import grammar
-import storage
-from errors import StorageError
+from . import conversation, grammar, storage
+from .errors import StorageError
 
 
 def submit(

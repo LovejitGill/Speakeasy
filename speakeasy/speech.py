@@ -11,7 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
-from errors import PracticeError
+from .errors import PracticeError
 
 
 class TranscriptionError(PracticeError):
@@ -29,7 +29,7 @@ class SpeechServiceError(TranscriptionError):
 MODEL_DIR = Path(
     os.environ.get(
         "SPEAKWELL_SPEECH_MODEL",
-        str(Path(__file__).parent / ".models/faster-whisper-base.en"),
+        str(Path(__file__).resolve().parents[1] / ".models/faster-whisper-base.en"),
     )
 )
 
@@ -141,7 +141,8 @@ def transcribe(audio):
     # Reject bad input before allocating a model process. Audio never reaches disk.
     decode_recording(audio)
     process = subprocess.Popen(
-        [sys.executable, str(Path(__file__).resolve()), "--child"],
+        [sys.executable, "-m", "speakeasy.speech", "--child"],
+        cwd=Path(__file__).resolve().parents[1],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
