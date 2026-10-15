@@ -29,22 +29,22 @@ def worker(path):
 def feedback(result, label, turn_id):
     if not result:
         return
-    offered = result["state"] == "offered"
-    status = (
-        "Suggested edit"
-        if offered
-        else (
-            "Unavailable" if result["state"] == "unavailable" else "No supported edit"
-        )
-    )
-    if label == "Quick feedback" and result["state"] == "withheld":
-        status = "Nice effort! No supported corrections found."
-    if label == "Quick feedback" and result["state"] in {"no_issues", "reviewed"}:
+    state = result["state"]
+    offered = state == "offered"
+    if offered:
         status = (
-            "No issues detected"
-            if result["state"] == "no_issues"
-            else "Check completed"
+            "Suggested edits" if len(result.get("edits", [])) > 1 else "Suggested edit"
         )
+    elif state == "unavailable":
+        status = "Unavailable"
+    elif state == "error":
+        status = "Error"
+    elif state == "unsupported":
+        status = "Unsupported"
+    elif state in {"no_issues", "withheld"}:
+        status = "No issues detected"
+    else:
+        status = "Check completed"
     names = st.session_state.get("spelling_names", set())
     spellings = [
         item
@@ -70,21 +70,44 @@ def feedback(result, label, turn_id):
         expanded=offered
         or bool(spellings)
         or bool(grammar_suggestions)
-        or bool(issues),
+        or bool(issues)
+        or state in {"unavailable", "error", "unsupported"},
     ):
         if offered:
-            st.caption("SUGGESTED SENTENCE")
-            st.text(result["corrected_text"])
-            st.caption("WHY THIS CHANGE")
-            st.text(result["explanation"])
-            st.caption("Suggested correction; automated feedback can be wrong.")
-        else:
             st.caption(
-                result.get(
-                    "message",
-                    "No supported correction found; this is not proof of correct grammar.",
-                )
+                "PROPOSED CORRECTION" if result.get("edits") else "SUGGESTED SENTENCE"
             )
+            st.text(result["corrected_text"])
+            if result.get("proposal_provenance"):
+                st.caption(f"Proposal source: {result['proposal_provenance']}")
+            st.caption(
+                "ABOUT THESE EDITS" if result.get("edits") else "WHY THIS CHANGE"
+            )
+            st.text(result["explanation"])
+            for number, edit in enumerate(result.get("edits", []), start=1):
+                st.caption(f"Edit {number} · {edit['category']}")
+                st.text(f"Before: {edit['before'] or '(nothing)'}")
+                st.text(f"After: {edit['after'] or '(nothing)'}")
+                if edit.get("provenance"):
+                    st.caption(f"Explanation source: {edit['provenance']}")
+                st.text(
+                    edit.get(
+                        "explanation",
+                        "No local explanation is available for this category.",
+                    )
+                )
+            st.caption(
+                "Suggestion only; automated feedback can be wrong. Your original message remains unchanged."
+            )
+        else:
+            message = result.get(
+                "message",
+                "No issues detected by this check. This does not mean the message is error-free.",
+            )
+            if state in {"unavailable", "error"}:
+                st.warning(message)
+            else:
+                st.caption(message)
         if result.get("review_note"):
             st.caption(result["review_note"])
         for item in issues:
@@ -132,7 +155,7 @@ def feedback(result, label, turn_id):
 
 def render_turn(turn, *, include_reply=True):
     with st.chat_message("user"):
-        st.caption("YOU")
+        st.caption("YOU · ORIGINAL MESSAGE")
         st.text(turn["learner_text"])
         st.divider()
         st.caption("Pointers:")

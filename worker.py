@@ -29,6 +29,8 @@ class Worker:
             self.thread.start()
 
     async def _execute(self, job):
+        if self.stop.is_set() or not storage.is_running(job, self.path):
+            return
         task = asyncio.create_task(self.check(job["learner_text"]))
         try:
             while not task.done():
@@ -39,6 +41,10 @@ class Worker:
                 result = task.result()
             except Exception:  # noqa: BLE001 -- preserve jobs and suppress private diagnostics
                 result = dict(grammar.UNAVAILABLE)
+            if self.stop.is_set():
+                return
+            # finish atomically checks this attempt's token and immutable turn text.
+            # Cancellation/recovery can win even after inference has completed.
             storage.finish(job, result, self.path)
         finally:
             if not task.done():

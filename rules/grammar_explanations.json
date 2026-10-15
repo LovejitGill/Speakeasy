@@ -1,0 +1,11 @@
+{
+  "VERB:TENSE": "This edit is categorized as a verb-tense change. The category alone does not establish which tense fits the intended meaning.",
+  "VERB:SVA": "This edit is categorized as a subject–verb agreement change. The category alone does not establish which form fits the sentence's intended meaning.",
+  "VERB:FORM": "This edit is categorized as a verb-form change. The suitable form depends on the surrounding construction and intended meaning.",
+  "VERB:INFL": "This edit is categorized as a verb inflection change. The category alone does not establish which form is intended.",
+  "DET": "This edit is categorized as a determiner change, which can include articles such as ‘a’, ‘an’, or ‘the’. Whether a determiner is needed or which one fits depends on context.",
+  "NOUN:NUM": "This edit is categorized as a noun-number change. The category alone does not establish whether singular or plural matches the intended quantity.",
+  "NOUN:INFL": "This edit is categorized as a noun inflection change. The category alone does not establish which form is intended.",
+  "SPELL": "This edit is categorized as a spelling change. The category alone does not establish the intended spelling of names or specialized terms.",
+  "PREP": "This edit is categorized as a preposition change. The appropriate preposition depends on the phrase and its intended meaning."
+}

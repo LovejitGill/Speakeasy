@@ -29,12 +29,10 @@ It focuses on one conversation workflow with straightforward Python modules.
   history, conservative name/hobby recall, and explicit stop/no-follow-up handling.
 - **Reviewed voice input:** record, transcribe locally with Whisper, edit, then
   explicitly send. Recordings and transcripts never submit themselves.
-- **Two grammar checks:** quick evidence-backed suggestions for simple agreement,
-  auxiliary-do, modal-verb, and a/an errors; missing helping verbs show
-  checker-supported present/past phrase choices without guessing tense, alongside
-  independent spelling suggestions. An optional full check runs
-  using a model proposal corroborated by local grammar rules. Unsupported edits
-  are withheld; no correction found does not mean error-free English.
+- **Two grammar checks:** quick feedback uses a few deterministic local phrase
+  rules and never loads a model. Full feedback runs local CPU T5 in the background;
+  ERRANT describes its edits and the app adds generic explanations. Neither ERRANT
+  labels nor an unchanged result prove a sentence is correct.
 - **Saved sessions:** restore completed turns after refresh. If saving fails, keep
   the reply visible and retry without generating it again.
 - **Recoverable background checks:** one grammar worker, cancellation, duplicate
@@ -46,8 +44,8 @@ It focuses on one conversation workflow with straightforward Python modules.
 | `assets/style.css` / `.streamlit/config.toml` | Responsive layout styling and the app-wide color theme |
 | `tutor.py` | Coordinate a reply, quick feedback, and saving |
 | `conversation.py` / `context.py` | Select follow-ups and handle supported facts, people, and food constraints |
-| `grammar.py` | Quick/full checks sharing correction evidence and explanation logic |
-| `local.py` / `speech.py` | Bounded local HTTP requests and validated offline transcription |
+| `grammar.py` | Quick rules, full checks, ERRANT edits, and local explanations |
+| `local.py` / `speech.py` | Bounded local HTTP requests, offline T5 correction and transcription |
 | `storage.py` / `worker.py` | Direct SQLite operations and recoverable grammar jobs |
 
 The model selects among prepared follow-ups rather than writing unrestricted
@@ -71,8 +69,8 @@ facts. Corrections are displayed separately and never enter conversational histo
   Open English Wordnet meanings and available examples. Definitions may be formal;
   they do not identify the intended meaning or prove a correction is needed.
   Other unsupported questions still receive an explicit fallback.
-- Grammar suggestions are conservative and can still be wrong. Full checks support
-  single-line messages; unsupported or ambiguous corrections are withheld.
+- Grammar suggestions can be wrong or change intended meaning. Full checks support
+  single-line messages; ERRANT categories describe edits without verifying them.
 - Drafts and unsaved replies are memory-only. Refresh loses them; keep the page
   open and use **Retry saving reply** when persistence fails.
 - Saved text stays on this computer; recordings are not persisted by the app.
@@ -96,18 +94,20 @@ original repository.
 
 ## Part 1: Prerequisites and code
 
-You need **uv**, **Java 21**, **Ollama**, and **curl**. The commands below let uv
-install Python **>=3.12.13, <3.13** and the locked Python packages automatically.
-Internet is needed for installation/downloads; normal practice runs locally.
+You need **uv**. Ollama is optional for model-selected conversation replies. The lock requires Python **>=3.12.13, <3.13**.
+Internet is needed for installation and model downloads; practice runs locally.
 
 On a Mac supported by Homebrew, install missing tools with:
 
 ```bash
-brew install uv openjdk@21
+brew install uv
 brew install --cask ollama
 ```
 
-Intel Macs may lack compatible Homebrew packages. Reuse existing Java 21/Ollama
+The Homebrew and Linux installer commands are platform examples and were not run
+on the verified Intel Mac; it already had uv and Ollama installed.
+
+Intel Macs may lack compatible Homebrew packages. Reuse existing Ollama
 installations, or install compatible macOS x64 builds; setup does not install
 these system programs for you. This laptop's existing paths are shown below.
 
@@ -122,31 +122,58 @@ Run all remaining commands from the **Speakeasy** folder.
 
 ---
 
-## Part 2: One-time setup
+## Part 2: Dependencies and one-time downloads
 
 ```bash
+uv sync --locked
+# Not run on a clean machine here: this downloads weights and data.
 uv run --locked python tools/manage.py setup
 ```
 
-Setup discovers Java/Ollama, verifies Java 21, prepares LanguageTool, Whisper,
-and Open English Wordnet 2025,
-and checks/downloads the pinned Qwen models. It saves runtime paths in ignored
-`.env.local.json`; later launches load them automatically. Shell environment
-variables override saved paths. Do not `source` this JSON file.
+`uv sync --locked` installs the pinned dependencies, including CPU PyTorch,
+ERRANT, spaCy, and the `en_core_web_sm` 3.8.0 wheel. Managed setup downloads the
+pinned Whisper and T5 weights and local WordNet data. It does not start Ollama or
+download Qwen. Setup requires internet on a fresh installation.
+
+For model-selected conversation replies, add `--with-ollama` to setup and launch.
+This opt-in mode starts/reuses Ollama and checks/pulls the pinned `qwen3:1.7b`
+model. Existing `qwen3:4b` configuration remains supported but is not required
+by current conversation or grammar features.
+
+These component commands repeat an individual download or repair a missing local
+asset. They were not rerun for this documentation update because the pinned
+assets were already installed:
+
+```bash
+uv run --locked python tools/setup.py grammar # T5 weights
+uv run --locked python tools/setup.py speech  # Whisper weights
+uv run --locked python tools/setup.py wordnet # local dictionary data
+```
+
+The English spaCy model comes from `uv sync --locked`; it is not downloaded by
+`tools/setup.py grammar`. To check the installed ERRANT/spaCy pair:
+
+```bash
+uv run --locked python -c 'import errant, spacy; spacy.load("en_core_web_sm"); errant.load("en"); print("ERRANT and English spaCy model ready")'
+```
+
+T5 weights live in `.models/gec-t5_small` (override with
+`SPEAKWELL_GRAMMAR_MODEL`); all model and data directories are Git-ignored.
+The T5 model is `Unbabel/gec-t5_small`; Whisper is
+`Systran/faster-whisper-base.en`. The dependency lock and installed model
+compatibility were checked on the Intel Mac described below.
 
 **If runtime discovery fails on this Intel development laptop**, run:
 
 ```bash
-export SPEAKWELL_JAVA="$PWD/../lang_app/.tools/benchmark/jdk-21.0.12.1+1-jre/Contents/Home/bin/java"
 export SPEAKWELL_OLLAMA="$PWD/../lang_app/.tools/ollama/ollama"
-"$SPEAKWELL_JAVA" -version
 "$SPEAKWELL_OLLAMA" --version
-uv run --locked python tools/manage.py setup
+uv run --locked python tools/manage.py setup --with-ollama
 ```
 
-These paths reuse existing tools in the neighboring project. On another computer,
-set the variables to that computer's executable paths instead. Java must report
-**21**. Setup ends with **Setup verified** and stops only services it started.
+This path reuses an existing tool in the neighboring project. On another computer,
+set the variable to that computer's executable path instead. Setup ends with
+**Setup verified** and stops only services it started.
 Downloads can take several minutes; there is no fixed installation-time guarantee.
 
 ---
@@ -154,24 +181,35 @@ Downloads can take several minutes; there is no fixed installation-time guarante
 ## Part 3: Launch
 
 ```bash
-uv run --locked python tools/manage.py launch
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 HF_HUB_DISABLE_TELEMETRY=1 UV_OFFLINE=1
+# Offline launch sequence; requires the dependencies and all model files above.
+# This exact offline launch command was not rerun while editing this guide.
+uv run --offline --locked python tools/manage.py launch
 ```
 
 Open **http://127.0.0.1:8501**. Keep this terminal running.
+The launcher reuses local assets without starting Ollama. If `--with-ollama` is
+supplied, it starts/reuses the service and verifies the conversation model.
+After installation, the Hugging Face and uv offline flags prevent model/package
+downloads. T5 also sets its offline flags in its child process. **Tested on the
+Intel Mac in this repository:** PyTorch is pinned to 2.2.2 and T5/Whisper use
+CPU; Ollama detected CPU inference (`library=cpu`, `-ngl 0`, zero VRAM). Ollama
+chooses its available local compute automatically on other systems.
 
 | Piece | Local port |
 |---|---|
 | Ollama | 11434 |
-| LanguageTool | 8081 |
 | Streamlit | 8501 by default |
 | Whisper | none; loads when transcribing |
 
-Launch reuses healthy services and starts missing ones. Do not start separate
-copies of `ollama.sh` or `checker.sh` as well. For another app port:
+For another app port:
 
 ```bash
 uv run --locked python tools/manage.py launch --port 8502
 ```
+
+The alternate-port example is supported by the launcher but was not run in this
+audit.
 
 Press **Ctrl+C** to stop the app and services this launch started. Pre-existing
 services remain running. Saved conversations remain in `data/practice.sqlite3`.
@@ -194,9 +232,13 @@ Restart the launch after changing backend code; a browser refresh is insufficien
 1. Choose a **Level** and **Scenario**, then click **Start new session**.
 2. Type in **Your message**, or record with the microphone and click Stop.
 3. Review/edit the transcript, then click **Send**. Recording never sends itself.
-4. Read **Quick feedback** under your message. Optional **Full grammar check**
-   runs in the background; it can be cancelled. No correction does not prove
-   error-free English.
+4. Read **Quick feedback** under your message. It checks only a small set of
+   local phrases; “no issues detected” means those checks found no match. Optional
+   **Full grammar check** runs CPU T5/ERRANT in the existing background worker and
+   can be cancelled. It accepts single-line input up to 128 T5 tokens. A proposed
+   rewrite can change meaning; edits/categories are descriptive and never
+   verified or applied automatically. Missing weights or inference errors leave
+   the full result unavailable while quick feedback remains usable.
 5. Open saved sessions from the sidebar. Refresh restores saved turns, but loses
    unsent drafts and unsaved replies. If saving fails, use **Retry saving reply**
    before closing the page.
@@ -209,27 +251,36 @@ model-generated conversation; longer exchanges may run out of questions.
 
 ## Part 5: Troubleshooting and verification
 
-- **Missing runtime:** set the two executable paths in Part 2 and rerun setup.
+- **Optional Ollama runtime missing:** set the executable path in Part 2 and rerun setup with `--with-ollama`.
   Do not add a backslash before `@` in Homebrew paths.
 - **Port occupied/unhealthy:** inspect the listener; do not kill an unidentified
   process. Choose another app port if only Streamlit's port is occupied.
-- **Startup failure:** inspect `.tools/logs/ollama.log` or `checker.log`.
-- **Checker download fails:** setup uses curl and verifies the archive checksum.
-  For `Checksum mismatch`, remove only `.tools/LanguageTool-6.6.zip` and rerun
-  setup. An HTTP 403 is a download failure, not a Java error; do not bypass checks.
+- **Startup failure:** inspect `.tools/logs/ollama.log`.
+- **Full feedback unavailable / T5 files missing:** run
+  `uv run --locked python tools/setup.py grammar`; check that
+  `SPEAKWELL_GRAMMAR_MODEL`, if set, points to the directory containing the pinned
+  T5 files. For a missing spaCy English model or package, run `uv sync --locked`.
+  Full feedback reports an unavailable state when these assets cannot load.
+- **Whisper files missing:** run `uv run --locked python tools/setup.py speech`.
+- **WordNet missing:** run `uv run --locked python tools/setup.py wordnet`.
+- **Qwen/Ollama unavailable:** conversation uses prepared follow-ups, and grammar
+  feedback remains available. Only `--with-ollama` requires a healthy Ollama
+  service and the pinned Qwen 1.7B model. AI-generated Qwen explanations are not
+  implemented; full grammar explanations are generic local text.
 - **Python downloads stall:** use the diagnostic command below. Check connection
   or proxy errors; keep `uv.lock` and certificate verification intact.
 
 ```bash
 lsof -nP -iTCP:11434 -sTCP:LISTEN
-lsof -nP -iTCP:8081 -sTCP:LISTEN
 UV_HTTP_TIMEOUT=30 UV_HTTP_RETRIES=1 uv sync --locked -v
 ```
+
+These diagnostics are examples and were not needed on the verified host.
 
 Run only the troubleshooting command relevant to your error. To verify imports:
 
 ```bash
-uv run --locked python -c "import streamlit, faster_whisper, httpx, numpy; print('Imports OK')"
+uv run --locked python -c "import streamlit, faster_whisper, httpx, numpy, errant, spacy; spacy.load('en_core_web_sm'); print('Imports OK')"
 ```
 
 For focused setup/launch tests:
@@ -238,10 +289,9 @@ For focused setup/launch tests:
 uv run --locked pytest tests/test_manage.py -q
 ```
 
-See **Verification** below for the full suite and real-service smoke command.
-Standalone scripts do not load `.env.local.json`; for the smoke command, use a
-terminal with the Java/runtime exports from Part 2 and keep the app launch running.
-The individual scripts in `tools/` remain available for manual troubleshooting.
+See **Verification** below for the test suite and real-service smoke command.
+The smoke command needs Ollama, the pinned Qwen 1.7B model, and cached T5/spaCy
+assets. Runtime model loading does not download weights.
 
 </details>
 
@@ -251,35 +301,23 @@ The individual scripts in `tools/` remain available for manual troubleshooting.
 uv run --locked pytest -q
 uv run --locked ruff check .
 uv run --locked ruff format --check .
-# With Ollama, both models, and LanguageTool available:
+# With Ollama, both models, and cached T5/spaCy models available:
 uv run --locked python tools/acceptance.py
 ```
 
-The last full-suite run passed **189 automated tests**, including service failures,
-transaction rollback, duplicate workers, interruption recovery, stale results,
-safe rendering, draft recovery, and Streamlit session restoration. Most service
-tests use mocks. Real local-service smoke checks also exercised model selection,
-grammar suggestions/abstention, and transcription.
-A later review covered 25 synthetic conversation turns and 10 grammar examples,
-with **13 new regression tests passing**; the full suite was not rerun.
-A subsequent latency/rules/layout update passed 13 additional new tests, live
-checker examples, and desktop/mobile browser layout checks. It fixed
-stale recall after an explicit person correction and confirmed remaining gaps in
-topic switching, longer exchanges, and clarification coverage.
-
-The user confirmed recording permissions, playback, transcription, editable review,
-explicit sending, and refresh restoration in the browser. This was a manual check,
-not browser automation; the updated automatic-transcription flow has automated
-UI coverage and an isolated Chrome check using injected speech with real local
-Whisper. A fresh physical microphone check remains pending. A separate 24-turn conversation review identified remaining
-continuity and clarification limits. These checks do not establish general
-accuracy or production readiness.
+The migration audit on 2026-10-14 ran the full suite (**320 passed, 8 failed,
+11 skipped**), focused worker/UI/grammar checks, real CPU T5/ERRANT cases, the
+local-service acceptance script, and an AppTest workflow through persistence,
+WordNet, and Whisper using a WAV fixture. The eight failures are conversation
+clarification tests because dictionary lookup runs before clarification routing.
+These checks do not establish general correction accuracy or physical microphone
+behavior.
 
 ## Roadmap
 
 - [x] Typed practice, session persistence, and unsaved-reply recovery
 - [x] Editable recorded input and manual browser/microphone verification
-- [x] Shared grammar evidence and recoverable background checks
+- [x] Local T5/ERRANT grammar suggestions and recoverable background checks
 - [x] Initial conversation review and same-message recall correction
 - [x] Relevant short-answer follow-ups for supported questions
 - [x] Useful clarification of supported questions
@@ -289,13 +327,6 @@ accuracy or production readiness.
 ## License
 
 MIT — see [LICENSE](LICENSE). Third-party models and libraries retain their own licenses.
-
-Grammar failures identify the failed stage: Ollama proposal, LanguageTool
-verification, or supplemental number/plural check. If the supplemental check
-fails, install the checker with `uv run python tools/setup.py checker` and set
-`SPEAKWELL_JAVA` to a working Java executable when launching the app. An optional
-local `.tools/java` executable/link is also supported. Quick feedback retains
-its short deadline; a quick-check failure does not cancel the separate full check.
 
 After changing grammar or worker code, restart the Streamlit process. A browser
 refresh alone may retain a cached worker using the previous implementation.
