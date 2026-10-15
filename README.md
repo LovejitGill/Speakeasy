@@ -4,21 +4,25 @@
 ![Local inference](https://img.shields.io/badge/Inference-local-287D3C)
 [![MIT License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**A Multilingual AI Language Tutor
-Speakeasy is a proposed voice-based language-learning application designed to help users practice multiple languages with a virtual AI tutor. Learners will speak into a microphone, hear the tutor respond, and receive targeted feedback on grammar, vocabulary, coherence, and pronunciation.**
+**AI Language Tutor**
 
+MVP: (Current capabilities) The current proof of concept supports English practice through typed messages or reviewed speech transcripts. It provides prepared tutor responses, limited quick grammar feedback, optional full grammar suggestions, local vocabulary lookup, and saved sessions. It does not yet support real-time conversation, multilingual practice, spoken tutor replies, or pronunciation feedback.
 Speakeasy helps learners practise English through typed messages or completed
 recordings. Review the transcript before sending, receive a conversational reply,
 and explore supported grammar suggestions. Models run on your computer; completed
 conversations are stored locally in SQLite.
 
-This **Speakeasy** repository is a fresh implementation informed by
-[the original Speakwell application](https://github.com/LovejitGill/Speakwell).
-It focuses on one conversation workflow with straightforward Python modules.
+<details>
+<summary>Goals </summary>
+  
+Multilingual AI Language Tutor
+Speakeasy is a proposed voice-based language-learning application designed to help users practice language(s) with a virtual AI tutor to improve grammar and vocabulary, and develop speaking skills through personalized feedback, with a focus on real-time spoken interaction. Learners will speak into a mic, hear the tutor respond, and receive targeted feedback on grammar, vocabulary, coherence, and pronunciation.
 
-**Jump to:** [Features/Limitations](#featureslimitations) · [Quickstart](#not-so-quick-start) · [Development tests](tests/README.md) · [Roadmap](#roadmap)
+  </details>
 
-## Features/Limitations
+**Jump to:** [Features/Limitations](#featureslimitations) · [Quickstart](#not-so-quick-start) · [Roadmap](#roadmap)
+
+## Current Features/Limitations
 
 <details>
 <summary>Expand Features</summary>
@@ -255,6 +259,20 @@ Allow microphone access when prompted. Use **Record again** or **Retry
 transcription** as needed. Practice uses prepared follow-ups, not unrestricted
 model-generated conversation; longer exchanges may run out of questions.
 
+### Verify the app on your device
+
+- Record a short message with your microphone. Confirm the transcript appears
+  for review and is not sent until you click **Send**.
+- Try a sentence with a possible grammar issue. Review the quick feedback and,
+  if enabled, the full suggestion. Check that the original message remains
+  unchanged and treat the correction as a suggestion.
+- Test a follow-up conversation and open a saved session to confirm your turns
+  are restored.
+
+These hands-on checks help you assess microphone behavior and correction
+usefulness on your device. Automated tests do not establish general correction
+accuracy or physical microphone behavior.
+
 ---
 
 ## Part 5: Troubleshooting
@@ -291,10 +309,6 @@ Run only the troubleshooting command relevant to your error. To verify imports:
 uv run --locked python -c "import streamlit, faster_whisper, httpx, numpy, errant, spacy; spacy.load('en_core_web_sm'); print('Imports OK')"
 ```
 
-See [Development tests](tests/README.md) for test commands and the optional
-real-service smoke command. The smoke command needs Ollama, the pinned Qwen 1.7B
-model, and cached T5/spaCy assets. Runtime model loading does not download weights.
-
 ### Try it on your device
 
 - Type a message and send it. Confirm that a tutor reply and quick feedback appear.
@@ -320,6 +334,14 @@ microphone access and transcription.
 - [x] Useful clarification of supported questions
 - [x] Broader conversation and grammar review with new examples
 - [ ] Explicit topic switching and longer follow-up coverage
+- [ ] Add selectable practice languages, with matching tutor conversation,
+  transcription, grammar feedback, and vocabulary support.
+- [ ] Support real-time spoken conversation, including responsive turn-taking
+  and spoken tutor replies.
+- [ ] Give learners actionable speech feedback, such as pronunciation,
+  intelligibility, and pacing.
+- [ ] Personalize conversation topics and feedback to each learner’s goals,
+  proficiency, and progress.
 
 ## License
 
