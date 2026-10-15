@@ -42,7 +42,7 @@ Speakeasy is a proposed voice-based language-learning application designed to he
 - **Recoverable background checks:** one grammar worker, cancellation, duplicate
   prevention, and results attached to the exact submitted turn.
 
-  | Module | Responsibility |
+| Module | Responsibility |
 |---|---|
 | `app.py` | Page controls, recording, editable drafts, and feedback display |
 | `assets/style.css` / `.streamlit/config.toml` | Responsive layout styling and the app-wide color theme |
