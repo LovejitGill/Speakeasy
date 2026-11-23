@@ -13,7 +13,7 @@ and explore supported grammar suggestions. Models run on your computer; complete
 conversations are stored locally in SQLite.
 
 <details>
-<summary> # Goals </summary>
+<summary> Goals </summary>
   
 Multilingual AI Language Tutor
 Speakeasy is a proposed voice-based language-learning application designed to help users practice language(s) with a virtual AI tutor to improve grammar and vocabulary, and develop speaking skills through personalized feedback, with a focus on real-time spoken interaction. Learners will speak into a mic, hear the tutor respond, and receive targeted feedback on grammar, vocabulary, coherence, and pronunciation.
